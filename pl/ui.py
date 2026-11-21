@@ -208,6 +208,24 @@ class Painter:
             self._logo[key] = layer
         self._comp(ov, self._logo[key], xy[0], xy[1])
 
+    def asset(self, name):
+        from .common import RES
+        return Image.open(os.path.join(RES, "assets", name)).convert("RGBA")
+
+    def background(self):
+        if getattr(self, "_bg", None) is None:
+            try:
+                im = self.asset("scene.png").convert("RGB")
+                sc = max(self.w / im.width, self.h / im.height)
+                im = im.resize((int(im.width * sc) + 1, int(im.height * sc) + 1), Image.LANCZOS)
+                l, t = (im.width - self.w) // 2, (im.height - self.h) // 2
+                im = im.crop((l, t, l + self.w, t + self.h)).filter(ImageFilter.GaussianBlur(5))
+                im = Image.blend(im, Image.new("RGB", im.size, (22, 12, 64)), 0.45)
+            except Exception:
+                im = self.mesh(0)
+            self._bg = im
+        return self._bg
+
     def image(self, ov, img, xy):
         self._comp(ov, img, xy[0], xy[1])
 
@@ -281,6 +299,11 @@ class Scene:
     def dot(self, cx, cy, color_fn):
         self.regions.append({"kind": "dot", "c": (cx, cy), "col": color_fn, "page": self.tag})
 
+    def imgbtn(self, box, img, hover, cb, sel=None):
+        r = {"kind": "img", "box": box, "img": img, "hover": hover, "cb": cb, "sel": sel or (lambda: False),
+             "style": "img", "en": lambda: True, "page": self.tag}
+        self.regions.append(r)
+
     def entry(self, box, text):
         e = self.host.entry(box, text)
         self.widgets.append(e)
@@ -324,6 +347,11 @@ class Scene:
                 self.pt.bar(ov, r["box"], r["get"]())
             elif k == "dot":
                 self.pt.dot(ov, r["c"][0], r["c"][1], r["col"]())
+            elif k == "img":
+                b = r["box"]
+                self.pt.image(ov, r["hover"] if hv else r["img"], (b[0], b[1]))
+                if r["sel"]():
+                    self.pt._fill(ov, b, (255, 255, 255, 70), self.pt.mask(b[2] - b[0], b[3] - b[1], 10, 2))
         return ov
 
     def refresh(self):
@@ -370,7 +398,7 @@ class Scene:
         r = self._hit(x, y)
         if not r:
             return
-        if r["kind"] == "button":
+        if r["kind"] in ("button", "img"):
             r["cb"]()
         elif r["kind"] == "switch":
             r["set"](not r["get"]())
@@ -401,6 +429,18 @@ class Host:
         self.canvas = tk.Canvas(self.root, width=w, height=h, highlightthickness=0, bd=0, bg="#09081c")
         self.canvas.pack()
         self.bg = self.canvas.create_image(0, 0, anchor="nw")
+        import random
+        self.rnd = random
+        self.flakes = []
+        for i in range(34):
+            x, y, r = random.uniform(0, w), random.uniform(0, h), random.choice((1.5, 2, 2, 3))
+            it = self.canvas.create_oval(x - r, y - r, x + r, y + r, fill=random.choice(("#ffffff", "#e6e0ff", "#cfd8ff")), width=0)
+            self.flakes.append([it, x, y, random.uniform(0.6, 1.6) * (r / 2 + 0.4), random.uniform(0, 6.28), random.uniform(0.01, 0.03), r])
+        for i in range(9):
+            x, y = random.uniform(0, w), random.uniform(0, h)
+            it = self.canvas.create_text(x, y, text=random.choice("❄✦❅"), fill="#e8e2ff", font=("Segoe UI Symbol", -random.choice((12, 14, 17))))
+            self.flakes.append([it, x, y, random.uniform(0.5, 1.1), random.uniform(0, 6.28), random.uniform(0.01, 0.025), 0])
+        self.W, self.H = w, h
         self.scene = None
         self.q = queue.Queue()
         self.t0 = time.time()
@@ -446,17 +486,34 @@ class Host:
             traceback.print_exc()
         try:
             if self.scene and self.root.state() != "iconic":
-                frame = self.painter.mesh(time.time() - self.t0)
                 if self.scene.dirty or self.overlay is None:
                     self.overlay = self.scene.paint()
                     self.scene.dirty = False
-                frame.paste(self.overlay, (0, 0), self.overlay)
-                self._photo = self.ImageTk.PhotoImage(frame)
-                self.canvas.itemconfig(self.bg, image=self._photo)
+                    frame = self.painter.background().copy()
+                    frame.paste(self.overlay, (0, 0), self.overlay)
+                    self._photo = self.ImageTk.PhotoImage(frame)
+                    self.canvas.itemconfig(self.bg, image=self._photo)
+                self._snow()
         except Exception:
             traceback.print_exc()
         dt = (time.perf_counter() - t0) * 1000
-        self.root.after(max(15, int(48 - dt)), self._tick)
+        self.root.after(max(20, int(40 - dt)), self._tick)
+
+    def _snow(self):
+        import math
+        c = self.canvas
+        for f in self.flakes:
+            it, x, y, v, ph, dph, r = f
+            y += v
+            ph += dph
+            x += math.sin(ph) * 0.6
+            if y > self.H + 10:
+                y, x = -10, self.rnd.uniform(0, self.W)
+            f[1], f[2], f[4] = x, y, ph
+            if r:
+                c.coords(it, x - r, y - r, x + r, y + r)
+            else:
+                c.coords(it, x, y)
 
     def run(self):
         self._tick()
