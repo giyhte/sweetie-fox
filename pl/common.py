@@ -4,7 +4,7 @@ import json, os, sys, subprocess, shutil, urllib.request, hashlib
 APP = "Sweetie Fox"
 VERSION = "2.0"
 MC_VERSION = "1.21.11"
-UA = "PulseLite-Launcher/2.0"
+UA = "SweetieFox-Launcher/2.0"
 WIN = sys.platform.startswith("win")
 NOWIN = 0x08000000 if WIN else 0
 MODS = ["fabric-api", "sodium", "lithium", "ferrite-core", "entityculling",

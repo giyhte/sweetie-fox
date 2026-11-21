@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Установка игры, модов, сборка PulseLite Menu, запуск."""
+"""Установка игры, модов, сборка Sweetie Fox Menu, запуск."""
 import os, sys, shutil, subprocess, uuid, zipfile, urllib.parse
 from .common import *
 
@@ -183,7 +183,7 @@ def build_mod(P, ctx):
                 f"minecraft_version={MC_VERSION}\nloader_version={loader}\nfabric_version={fabric_api}\n"
                 "loom_version=1.14-SNAPSHOT\nmod_version=1.0.0\n")
 
-    ctx.log("Собираю PulseLite Menu (первый раз 3–6 минут)…")
+    ctx.log("Собираю Sweetie Fox Menu (первый раз 3–6 минут)…")
     env = dict(os.environ)
     env["JAVA_HOME"] = jdk
     env["GRADLE_USER_HOME"] = os.path.join(P.tools, "gradle-home")
@@ -221,7 +221,7 @@ def ensure_menu_mod(P, ctx, allow_build=True):
     jar = os.path.join(P.bundle, OWN_JAR)
     hf = os.path.join(P.bundle, "mod.hash")
     if not os.path.isdir(P.modsrc) and not os.path.exists(jar):
-        ctx.log("Папки modsrc нет — PulseLite Menu пропущен (см. README)")
+        ctx.log("Папки modsrc нет — Sweetie Fox Menu пропущен (см. README)")
         return False
     fresh = False
     if os.path.exists(jar) and os.path.exists(hf):
@@ -233,11 +233,11 @@ def ensure_menu_mod(P, ctx, allow_build=True):
         try:
             jar = build_mod(P, ctx)
         except Exception as e:
-            ctx.log(f"! PulseLite Menu не собран: {e}")
+            ctx.log(f"! Sweetie Fox Menu не собран: {e}")
             return False
     os.makedirs(P.mods, exist_ok=True)
     shutil.copy2(jar, os.path.join(P.mods, OWN_JAR))
-    ctx.log("PulseLite Menu установлен — в игре жми Right Shift")
+    ctx.log("Sweetie Fox Menu установлен — в игре жми Right Shift")
     return True
 
 
