@@ -2,6 +2,8 @@ package dev.pulselite;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.resources.Identifier;
 
 /** Мелкие помощники для рисования. */
 public final class Gfx {
@@ -38,4 +40,16 @@ public final class Gfx {
     public static boolean in(double mx, double my, int x, int y, int w, int h) {
         return mx >= x && mx < x + w && my >= y && my < y + h;
     }
+
+    public static Identifier id(String path) { return Identifier.fromNamespaceAndPath("pulselite", path); }
+
+    public static void tex(GuiGraphics g, Identifier id, int x, int y, int w, int h, int tw, int th) {
+        g.blit(RenderPipelines.GUI_TEXTURED, id, x, y, 0f, 0f, w, h, tw, th, tw, th);
+    }
+
+    public static void icon(GuiGraphics g, String name, int x, int y, int size) {
+        tex(g, id("textures/gui/icons/" + name + ".png"), x, y, size, size, 64, 64);
+    }
+
+    public static float approach(float cur, float target, float k) { return cur + (target - cur) * Math.min(1f, k); }
 }

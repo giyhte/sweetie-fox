@@ -16,6 +16,8 @@ public final class PulseHud {
         Minecraft mc = Minecraft.getInstance();
         PulseConfig c = PulseConfig.get();
         if (mc.player == null || mc.options.hideGui) return;
+        PulseSky.hud(g, mc);
+        PulseEvents.render(g, mc);
         List<String> lines = new ArrayList<>();
         if (c.hudFps) lines.add("FPS " + mc.getFps());
         if (c.hudCoords) {

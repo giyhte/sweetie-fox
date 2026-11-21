@@ -7,7 +7,7 @@
   "authors": ["Sweetie Fox"],
   "license": "MIT",
   "environment": "client",
-  "entrypoints": { "client": ["dev.pulselite.Sweetie FoxClient"] },
+  "entrypoints": { "client": ["dev.pulselite.PulseLiteClient"] },
   "mixins": ["pulselite.mixins.json"],
   "depends": {
     "fabricloader": ">=0.16.0",
