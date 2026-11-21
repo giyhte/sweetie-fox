@@ -28,8 +28,8 @@ def pil_font(size):
 class Painter:
     def __init__(self, w, h):
         self.w, self.h = w, h
-        self.mw = 64
-        self.mh = max(8, int(64 * h / w))
+        self.mw = 28
+        self.mh = max(6, int(28 * h / w))
         self._m, self._g, self._glow, self._logo, self._sheen = {}, {}, {}, {}, {}
 
     # ----- фон -----
@@ -53,13 +53,13 @@ class Painter:
                 data.append((min(255, int(r)), min(255, int(g)), min(255, int(b))))
         im = Image.new("RGB", (mw, mh))
         im.putdata(data)
-        return im.resize((self.w, self.h), Image.BICUBIC)
+        return im.resize((self.w, self.h), Image.BILINEAR)
 
     # ----- примитивы -----
     def mask(self, w, h, r, ring=0):
         key = (w, h, r, ring)
         if key not in self._m:
-            S = 4
+            S = 4 if w * h < 30000 else 2
             m = Image.new("L", (w * S, h * S), 0)
             d = ImageDraw.Draw(m)
             d.rounded_rectangle((0, 0, w * S - 1, h * S - 1), r * S, fill=255)
@@ -322,13 +322,18 @@ class Scene:
 
     # --- рисование ---
     def paint(self):
-        ov = Image.new("RGBA", (self.pt.w, self.pt.h), (0, 0, 0, 0))
-        for f in self.under:
-            if isinstance(f, tuple):
-                if f[0] in (None, self.cur):
-                    f[1](ov)
-            else:
-                f(ov)
+        cache = self.__dict__.setdefault("_under_cache", {})
+        base = cache.get(self.cur)
+        if base is None:
+            base = Image.new("RGBA", (self.pt.w, self.pt.h), (0, 0, 0, 0))
+            for f in self.under:
+                if isinstance(f, tuple):
+                    if f[0] in (None, self.cur):
+                        f[1](base)
+                else:
+                    f(base)
+            cache[self.cur] = base
+        ov = base.copy()
         for r in self.regions:
             if not self._vis(r):
                 continue

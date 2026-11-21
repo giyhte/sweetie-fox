@@ -37,7 +37,7 @@ def state(P):
 # ---------- options.txt ----------
 def write_options(P, low):
     path = os.path.join(P.game, "options.txt")
-    wanted = {"lang": "ru_ru"}
+    wanted = {"lang": "ru_ru", "onboardAccessibility": "false", "skipMultiplayerWarning": "true", "joinedFirstServer": "true", "tutorialStep": "none"}
     if low:
         wanted.update({"renderDistance": "6", "simulationDistance": "5", "particles": "2",
                        "entityShadows": "false", "biomeBlendRadius": "0", "mipmapLevels": "0",
@@ -84,24 +84,45 @@ def install_game(P, ctx):
 def download_mods(P, ctx):
     os.makedirs(P.mods, exist_ok=True)
     ctx.log("Моды оптимизации (Modrinth)…")
-    for i, slug in enumerate(MODS):
-        ctx.frac(i / len(MODS))
+    import json as _j
+    reg_p = os.path.join(P.mods, ".pl_mods.json")
+    try:
+        reg = _j.load(open(reg_p, encoding="utf-8"))
+    except Exception:
+        reg = {}
+    todo = [m for m in MODS if not (m in reg and os.path.exists(os.path.join(P.mods, reg[m])))]
+    if not todo:
+        ctx.log("  моды уже установлены")
+        ctx.frac(1)
+        return
+    from concurrent.futures import ThreadPoolExecutor
+    done = [0]
+
+    def one(slug):
         try:
             q = urllib.parse.urlencode({"loaders": json_s(["fabric"]), "game_versions": json_s([MC_VERSION])})
             vs = http_json(f"https://api.modrinth.com/v2/project/{slug}/version?{q}")
             if not vs:
                 ctx.log(f"  ! {slug}: нет версии под {MC_VERSION}")
-                continue
+                return
             files = vs[0]["files"]
             f = next((x for x in files if x.get("primary")), files[0])
             dest = os.path.join(P.mods, f["filename"])
-            if os.path.exists(dest):
-                continue
-            ctx.status(slug)
-            download(f["url"], dest, timeout=120)
+            if not os.path.exists(dest):
+                download(f["url"], dest, timeout=120)
+            reg[slug] = f["filename"]
             ctx.log(f"  + {slug}")
         except Exception as e:
             ctx.log(f"  ! {slug}: {e}")
+        done[0] += 1
+        ctx.frac(done[0] / len(todo))
+
+    with ThreadPoolExecutor(4) as ex:
+        list(ex.map(one, todo))
+    try:
+        _j.dump(reg, open(reg_p, "w", encoding="utf-8"))
+    except Exception:
+        pass
     ctx.frac(1)
 
 
@@ -242,7 +263,7 @@ def launch(P, cfg):
             "uuid": str(uuid.uuid3(uuid.NAMESPACE_DNS, "OfflinePlayer:" + nick)),
             "token": "",
             "jvmArguments": [f"-Xmx{cfg['ram']}M", f"-Xms{min(1024, cfg['ram'])}M",
-                             "-XX:+UseG1GC", "-XX:MaxGCPauseMillis=50"],
+                             "-XX:+UseG1GC", "-XX:MaxGCPauseMillis=50", "-XX:+ParallelRefProcEnabled", "-XX:+DisableExplicitGC", "-XX:InitiatingHeapOccupancyPercent=15", "-Dfabric.log.level=warn"],
             "gameDirectory": P.game}
     if cfg.get("autojoin") and cfg.get("server"):
         opts["quickPlayMultiplayer"] = cfg["server"]

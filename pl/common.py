@@ -8,7 +8,7 @@ UA = "PulseLite-Launcher/2.0"
 WIN = sys.platform.startswith("win")
 NOWIN = 0x08000000 if WIN else 0
 MODS = ["fabric-api", "sodium", "lithium", "ferrite-core", "entityculling",
-        "immediatelyfast", "dynamic-fps"]
+        "immediatelyfast", "dynamic-fps", "modernfix", "krypton"]
 OWN_JAR = "pulselite-menu.jar"
 DEFAULT_CFG = {"nick": "Player", "ram": 2048, "low_mode": True, "server": "mc.funtime.su",
                "autojoin": False, "own_mod": True}

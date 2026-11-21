@@ -180,7 +180,7 @@ class LauncherScene(Scene):
         names = sorted(f[:-4] for f in os.listdir(self.P.mods) if f.endswith(".jar")) if os.path.isdir(self.P.mods) else []
         self.set_text("modlist", ("Установлено: %d\n\n" % len(names)) + "\n".join("• " + n for n in names[:14])
                       if names else "Модов пока нет — нажми «УСТАНОВИТЬ» на главной.")
-        self.set_text("b_main", "УСТАНОВИТЬ МЕНЮ" if need_menu else ("▶  ИГРАТЬ" if self.st["game"] else "УСТАНОВИТЬ"))
+        self.set_text("b_main", ("ОБНОВИТЬ МЕНЮ" if self.st["menu"] else "УСТАНОВИТЬ МЕНЮ") if need_menu else ("▶  ИГРАТЬ" if self.st["game"] else "УСТАНОВИТЬ"))
         self.refresh()
 
     def save(self):
