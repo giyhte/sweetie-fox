@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Самоустановка SweetieFox.exe: копирует себя в папку программы и кладёт ярлык на рабочий стол."""
 import os, sys, shutil, subprocess, threading
+from PIL import Image
 from .common import *
 from .ui import Host, Scene
 
@@ -23,13 +24,44 @@ def is_installed():
         os.path.normcase(os.path.abspath(install_dir()))
 
 
+def ico_path(dst):
+    """Кладём icon.ico рядом с exe, чтобы ярлык не зависел от иконки внутри exe и кэша Windows."""
+    try:
+        src = os.path.join(RES, "assets", "icon.ico")
+        out = os.path.join(dst, "SweetieFox.ico")
+        if os.path.exists(src):
+            shutil.copy2(src, out)
+            return out
+    except Exception:
+        pass
+    return None
+
+
 def make_shortcut(exe, desktop=True):
     q = lambda s: s.replace("'", "''")
+    ico = ico_path(os.path.dirname(exe)) or exe
     ps = ("$d=[Environment]::GetFolderPath('Desktop');"
           "$s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $d 'Sweetie Fox.lnk'));"
           f"$s.TargetPath='{q(exe)}';$s.WorkingDirectory='{q(os.path.dirname(exe))}';"
-          f"$s.IconLocation='{q(exe)},0';$s.Save()")
+          f"$s.IconLocation='{q(ico)},0';$s.Save()")
     subprocess.run(["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps], timeout=60, **hidden())
+
+
+def refresh_shortcut_icon():
+    """Уже установленным: обновить иконку существующего ярлыка на рабочем столе."""
+    if not (WIN and getattr(sys, "frozen", False)):
+        return
+    try:
+        ico = ico_path(os.path.dirname(sys.executable))
+        if not ico:
+            return
+        q = lambda s: s.replace("'", "''")
+        ps = ("$p=Join-Path ([Environment]::GetFolderPath('Desktop')) 'Sweetie Fox.lnk';"
+              "if(Test-Path $p){$w=New-Object -ComObject WScript.Shell;$s=$w.CreateShortcut($p);"
+              f"$s.IconLocation='{q(ico)},0';$s.Save()" + "}")
+        subprocess.run(["powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", ps], timeout=60, **hidden())
+    except Exception:
+        pass
 
 
 class InstallScene(Scene):
@@ -39,7 +71,10 @@ class InstallScene(Scene):
         self.dst = install_dir()
         self.state = "ask"   # ask / work / done / fail
         self.shortcut = True
-        ic = pt.icon(110)
+        try:
+            ic = Image.open(os.path.join(RES, "assets", "icon.png")).convert("RGBA").resize((110, 110), Image.LANCZOS)
+        except Exception:
+            ic = pt.icon(110)
         self.under.append(lambda ov: pt.glass(ov, (20, 20, 620, 400), 28, 110, 18))
         self.under.append(lambda ov: pt.image(ov, ic, (52, 56)))
         self.text("t", 190, 66, "sweetie fox", 36, True, "#ffffff")

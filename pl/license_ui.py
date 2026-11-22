@@ -44,7 +44,8 @@ class GateScene(Scene):
         # ---------- загрузка ----------
         self.tag = "welcome"
         self.under.append(("welcome", lambda ov: pt.image(ov, splash, (0, 0))))
-        self.text("sp0", 44, 28, "Инициализация...", 10, False, "#e8e4ff", "w")
+        self.spinner(38, 34, 8)
+        self.text("sp0", 56, 34, "Инициализация...", 10, False, "#e8e4ff", "w")
         self.text("sp1", 500, 372, "SWEETIE FOX", 40, True, "#ffffff", "center")
         self.text("sp2", 500, 412, "M I N E C R A F T    L A U N C H E R", 10, False, "#a78bfa", "center")
         self.bar((190, 456, 770, 464), lambda: self.pgprog)

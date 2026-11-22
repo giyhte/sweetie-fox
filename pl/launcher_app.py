@@ -11,7 +11,7 @@ W, H = 1000, 563
 SUB = "#c4bff0"
 DIM = "#8f88c8"
 OK, BAD = (134, 239, 172), (251, 113, 133)
-PAGES = ["home", "versions", "set", "acc", "mods"]
+PAGES = ["home", "set", "acc", "mods"]
 NAV = [("home", "Главная", "home"), ("set", "Настройки", "gear"),
        ("acc", "Аккаунты", "user"), ("mods", "Моды", "puzzle")]
 TELEGRAM_URL = "https://t.me/sweetielauncher"
@@ -82,17 +82,16 @@ class LauncherScene(Scene):
         grass.putalpha(pt.mask(26, 26, 4))
 
         # ---- каркас окна ----
-        self.under.append(lambda ov: pt._fill(ov, (6, 6, W - 6, H - 6), (255, 255, 255, 34), pt.mask(W - 12, H - 12, 24, 1)))
         self.under.append(lambda ov: pt.glass(ov, (12, 12, 178, H - 12), 22, 110, 10, 30))
         self.under.append(lambda ov: pt.image(ov, side_logo, (24 + (154 - side_logo.width) // 2 + 1, 40)))
         for i, (k, label, gl) in enumerate(NAV):
             cy = 224 + i * 41
-            self.button("nav_" + k, (30, cy - 19, 176, cy + 19), "", (lambda k=k: self.go(k)), "nav", 13,
-                        sel=(lambda k=k: self.nav == k))
-            self.glyph(gl, 55, cy, 18, (lambda k=k: LIGHT if self.nav == k else MUTED))
+            nr = self.button("nav_" + k, (30, cy - 19, 176, cy + 19), "", (lambda k=k: self.go(k)), "nav", 13,
+                             sel=(lambda k=k: self.nav == k))
+            self.glyph(gl, 55, cy, 18, (lambda nr=nr: tuple(int(a + (b - a) * nr.get("sv", 0.0)) for a, b in zip(MUTED, LIGHT))))
             self.text("navt_" + k, 78, cy, label, 12, False, "#e8e4ff", "w")
         tg, tgh = pt.telegram_icon(24), pt.telegram_icon(24, hover=True)
-        self.imgbtn((89, 432, 113, 456), tg, tgh, lambda: webbrowser.open(TELEGRAM_URL))
+        self.imgbtn((83, 436, 107, 460), tg, tgh, lambda: webbrowser.open(TELEGRAM_URL))
         self.text("side_name", 95, 488, "Sweetie Fox Launcher \u2665", 9, False, DIM, "center")
         self.text("side_ver", 95, 504, "v" + VERSION, 9, False, DIM, "center")
 
@@ -122,21 +121,17 @@ class LauncherScene(Scene):
         self.glyph("clock", 394, 380, 12, (160, 150, 215, 255))
         self.text("n3", 406, 380, "25.11.2026", 10, False, DIM, "w")
 
-        # выбор версии + запуск
+        # версия + запуск
         self.under.append(("home", lambda ov: pt.glass(ov, (192, 414, 780, 548), 18, 100, 12, 34)))
         self.glyph("play", 212, 436, 14, (160, 130, 255, 255))
-        self.text("vh", 228, 436, "Выбор версии", 13, True, "#ffffff", "w")
-        self.under.append(("home", lambda ov: pt.inset(ov, (206, 452, 366, 490), 12)))
+        self.text("vh", 228, 436, "Версия", 13, True, "#ffffff", "w")
+        self.under.append(("home", lambda ov: pt.inset(ov, (206, 452, 330, 490), 12)))
         self.under.append(("home", lambda ov: pt.image(ov, grass, (214, 458))))
         self.text("ver", 250, 471, MC_VERSION, 13, False, "#ffffff", "w")
-        self.glyph("chev", 346, 471, 12, (200, 190, 255, 255))
-        self.link((206, 452, 366, 490), lambda: self.go("versions"))
-        self.button("b_more", (378, 452, 540, 490), "Скачать другие версии", lambda: self.go("versions"), "ghost", 10)
-        self.glyph("download", 524, 471, 12, (225, 215, 255, 255))
+        self.text("verst", 346, 471, "", 10, False, SUB, "w", width=200)
         self.button("b_main", (556, 438, 770, 494), "", self.on_main, "primary", 17, lambda: not self.busy)
-        self.text("verst", 206, 500, "", 10, False, SUB)
-        self.text("status", 206, 515, "", 10, False, SUB, width=430)
-        self.text("pinfo", 766, 500, "", 10, True, "#ffffff", "ne")
+        self.text("status", 206, 505, "", 10, False, SUB, width=430)
+        self.text("pinfo", 766, 505, "", 10, True, "#ffffff", "ne")
         self.bar((206, 534, 766, 540), lambda: self.prog)
 
         # оптимизация
@@ -152,7 +147,7 @@ class LauncherScene(Scene):
         self.under.append(("home", lambda ov: pt._fill(ov, (836, 120, 938, 222), (255, 255, 255, 70), pt.mask(102, 102, 51, 2))))
         self.under.append(("home", lambda ov: pt._fill(ov, (837, 121, 937, 221), (10, 8, 30, 235), pt.mask(100, 100, 50))))
         self.under.append(("home", lambda ov: pt.image(ov, av, (887 - av.width // 2, 171 - av.height // 2))))
-        self.dot(926, 211, lambda: OK, 5)
+        self.dot(926, 211, lambda: OK, 5, True)
         uname = (lic.username if lic else self.cfg["nick"]) or "Player"
         self.text("pname", 881, 244, uname, 15, True, "#ffffff", "center")
         self.dot(851, 268, lambda: OK, 3)
@@ -168,14 +163,6 @@ class LauncherScene(Scene):
             self.under.append((page, lambda ov: pt.glass(ov, (192, 14, 962, 548), 20, 100, 12, 34)))
             self.text("h_" + page, 222, 36, title, 20, True, "#ffffff")
 
-        # ---- Версии ----
-        card("versions", "Версии Minecraft")
-        self.text("vv1", 222, 92, "Minecraft " + MC_VERSION + "  \u2022  Fabric", 18, True, "#ffffff")
-        self.text("vv2", 222, 128, "Поддерживается одна версия — под неё подобраны моды на FPS\n"
-                  "(Sodium, Lithium, FerriteCore и др.) и меню Sweetie Fox.", 12, False, SUB, width=640)
-        self.button("b_inst", (222, 200, 500, 242), "Переустановить / обновить", lambda: self.on_install(force=True), "ghost", 13,
-                    lambda: not self.busy)
-
         # ---- Настройки ----
         card("set", "Настройки")
         self.text("t_ram", 222, 92, "ПАМЯТЬ", 10, True, SUB)
@@ -189,6 +176,8 @@ class LauncherScene(Scene):
             self.text("h_" + k, 222, y + 22, hint, 11, False, DIM)
             self.switch((872, y + 4, 928, y + 30), (lambda k=k: self.cfg[k]), (lambda v, k=k: self._set(k, v)))
         self.button("b_dir", (222, 300, 500, 342), "Папка игры", lambda: open_folder(P.game), "ghost", 13)
+        self.button("b_inst", (520, 300, 798, 342), "Переустановить / обновить", lambda: self.on_install(force=True), "ghost", 13,
+                    lambda: not self.busy)
         self.text("a3", 222, 372, "Sweetie Fox Launcher  \u2022  версия " + VERSION + "\nАвтообновление лаунчера работает через GitHub.", 11, False, DIM)
 
         # ---- Аккаунты ----
@@ -491,6 +480,11 @@ def show_gate(host, P, lic, note="", mode="login"):
 
 def main(root):
     P = Paths(root)
+    try:
+        from . import installer
+        threading.Thread(target=installer.refresh_shortcut_icon, daemon=True).start()
+    except Exception:
+        pass
     host = Host("Sweetie Fox Launcher", W, H)
     lic = lic_mod.Lic(root)
     show_gate(host, P, lic)

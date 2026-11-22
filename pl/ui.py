@@ -25,6 +25,15 @@ def pil_font(size):
     return ImageFont.load_default(size)
 
 
+def _mixhex(a, b, t):
+    ca = tuple(int(a.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+    try:
+        cb = tuple(int(b.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+    except Exception:
+        return b
+    return "#%02x%02x%02x" % tuple(int(ca[i] + (cb[i] - ca[i]) * t) for i in range(3))
+
+
 class Painter:
     def __init__(self, w, h):
         self.w, self.h = w, h
@@ -32,6 +41,8 @@ class Painter:
         self.mh = max(6, int(28 * h / w))
         self._m, self._g, self._glow, self._logo, self._sheen = {}, {}, {}, {}, {}
         self._tg = {}
+        self.pulse, self.clock = 0.0, 0.0
+        self._edge, self._key = None, None
 
     # ----- фон -----
     def mesh(self, t):
@@ -131,15 +142,16 @@ class Painter:
         self._fill(ov, box, (5, 5, 22, 120), self.mask(w, h, r))
         self._fill(ov, box, (255, 255, 255, 22), self.mask(w, h, r, 1))
 
-    def glow(self, ov, box, color, r):
+    def glow(self, ov, box, color, r, k=1.0):
         x0, y0, x1, y1 = box
         w, h = x1 - x0, y1 - y0
-        key = (w, h, color)
+        kq = int(round(k * 8))
+        key = (w, h, color, kq)
         if key not in self._glow:
             pad = 46
             im = Image.new("RGBA", (w + pad * 2, h + pad * 2), color + (0,))
             d = ImageDraw.Draw(im)
-            d.rounded_rectangle((pad, pad + 6, pad + w, pad + h), r, fill=color + (120,))
+            d.rounded_rectangle((pad, pad + 6, pad + w, pad + h), r, fill=color + (min(255, int(120 * kq / 8)),))
             self._glow[key] = im.filter(ImageFilter.GaussianBlur(18))
         self._comp(ov, self._glow[key], x0 - 46, y0 - 46)
 
@@ -166,7 +178,7 @@ class Painter:
         hv = hv if enabled else 0.0
         base = 30 + int(26 * hv)
         if accent and enabled:
-            self.glow(ov, box, VIOLET if hv < 0.5 else (170, 140, 255), r)
+            self.glow(ov, box, VIOLET if hv < 0.5 else (170, 140, 255), r, 0.6 + 0.6 * self.pulse * (1 - hv) + 0.4 * hv)
             c1 = tuple(int(a + (b - a) * hv * 0.35) for a, b in zip((70, 44, 190), VIOLET))
             c2 = tuple(int(a + (b - a) * hv * 0.35) for a, b in zip((118, 90, 250), CYAN))
             self._grad_fill(ov, box, c1, c2, r, False)
@@ -197,6 +209,29 @@ class Painter:
             layer.putalpha(ImageChops.multiply(m, self.mask(w, h, r)))
             self._sheen[key] = layer
         self._comp(ov, self._sheen[key], x0, y0)
+
+    def navpill(self, ov, box, sv):
+        """Плавно проявляющаяся подсветка активного пункта меню (sv 0..1)."""
+        w, h = box[2] - box[0], box[3] - box[1]
+        if sv <= 0.01:
+            return
+        self.glow(ov, box, VIOLET, 12, 0.35 + 0.45 * sv)
+        self._grad_fill(ov, box, (70, 44, 190), (118, 90, 250), 12, False, int(235 * sv))
+        self._fill(ov, box, (255, 255, 255, int(70 * sv)), self.mask(w, h, 12, 1))
+        self.sheen(ov, box, 12, int(40 * sv))
+
+    def spinner(self, ov, cx, cy, r, ang):
+        S = 4
+        n = (2 * r + 6) * S
+        m = Image.new("L", (n, n), 0)
+        d = ImageDraw.Draw(m)
+        bb = (3 * S, 3 * S, n - 3 * S, n - 3 * S)
+        d.arc(bb, 0, 360, fill=60, width=2 * S)
+        d.arc(bb, ang, ang + 110, fill=255, width=2 * S)
+        m = m.resize((2 * r + 6, 2 * r + 6), Image.LANCZOS)
+        layer = Image.new("RGBA", m.size, (190, 170, 255, 255))
+        layer.putalpha(m)
+        self._comp(ov, layer, int(cx - r - 3), int(cy - r - 3))
 
     def switch(self, ov, box, on, hover=False):
         x0, y0, x1, y1 = box
@@ -231,6 +266,16 @@ class Painter:
             b = (x0, y0, x0 + fw, y1)
             self._grad_fill(ov, b, VIOLET, CYAN, h // 2)
             self.sheen(ov, b, h // 2, 70)
+            if frac < 0.999:   # бегущий блик
+                bw = 70
+                band = Image.new("L", (bw, 1))
+                band.putdata([int(120 * (1 - abs(i - bw / 2) / (bw / 2))) for i in range(bw)])
+                band = band.resize((bw, h))
+                lay = Image.new("L", (fw, h), 0)
+                lay.paste(band, (int(((self.clock * 0.55) % 1.3 - 0.15) * fw) - bw // 2, 0))
+                sh = Image.new("RGBA", (fw, h), (255, 255, 255, 0))
+                sh.putalpha(ImageChops.multiply(lay, self.mask(fw, h, h // 2)))
+                self._comp(ov, sh, x0, y0)
 
     def dot(self, ov, cx, cy, color, r=5):
         self._fill(ov, (cx - r, cy - r, cx + r, cy + r), color + (255,), self.mask(2 * r, 2 * r, r))
@@ -263,6 +308,23 @@ class Painter:
             im = im.filter(ImageFilter.GaussianBlur(26)).resize((self.w, self.h), Image.BILINEAR)
             self._bg = im
         return self._bg
+
+    def win_mask(self, r=26):
+        return self.mask(self.w, self.h, r)
+
+    def win_key(self):
+        if self._key is None:
+            self._key = Image.new("RGB", (self.w, self.h), (1, 1, 1))
+        return self._key
+
+    def win_edge(self, r=26):
+        """Тонкая фиолетовая кромка со свечением по краю скруглённого окна."""
+        if self._edge is None:
+            lay = Image.new("RGBA", (self.w, self.h), (0, 0, 0, 0))
+            for ring, a, col in ((8, 16, (110, 80, 255)), (4, 30, (130, 100, 255)), (2, 95, (150, 120, 255))):
+                self._fill(lay, (0, 0, self.w, self.h), col + (a,), self.mask(self.w, self.h, r, ring))
+            self._edge = lay
+        return self._edge
 
     def image(self, ov, img, xy):
         self._comp(ov, img, xy[0], xy[1])
@@ -379,16 +441,38 @@ class Scene:
         self.hover = None
         self.drag = None
         self._anim_t = time.perf_counter()
+        self.fills, self._wins, self._tr, self._last_cont = {}, set(), None, 0.0
+
+    def _cont_needed(self):
+        for r in self.regions:
+            if not self._vis(r):
+                continue
+            k = r["kind"]
+            if k == "spinner" or (k == "dot" and r.get("pulse")):
+                return True
+            if k == "bar":
+                f = r["get"]()
+                if 0.0 < f < 0.999:
+                    return True
+        return False
+
+    def _pulse_needed(self):
+        for r in self.regions:
+            if self._vis(r) and r["kind"] == "button" and r["style"] == "primary" and r["en"]():
+                return True
+        return False
 
     def tick_anim(self):
         now = time.perf_counter()
         dt = now - self._anim_t
         self._anim_t = now
+        self.pt.clock = now
         moving = False
         for r in self.regions:
-            if r["kind"] not in ("button", "img"):
+            k = r["kind"]
+            if k not in ("button", "img"):
                 continue
-            en = r["en"]() if r["kind"] == "button" else True
+            en = r["en"]() if k == "button" else True
             tgt = 1.0 if (r is self.hover and en) else 0.0
             hv = r.get("hv", 0.0)
             nh = hv + (tgt - hv) * min(1.0, dt * 10.0)
@@ -397,6 +481,52 @@ class Scene:
             else:
                 nh = tgt
             r["hv"] = nh
+            if k == "button" and r["style"] == "nav":
+                st = 1.0 if r["sel"]() else 0.0
+                sv = r.get("sv", 0.0)
+                ns = sv + (st - sv) * min(1.0, dt * 9.0)
+                if abs(ns - sv) > 0.002:
+                    moving = True
+                else:
+                    ns = st
+                r["sv"] = ns
+        pv = round((0.5 - 0.5 * math.cos(now * 2 * math.pi / 2.6)) * 8) / 8
+        if pv != self.pt.pulse:
+            self.pt.pulse = pv
+            if self._pulse_needed():
+                moving = True
+        if now - self._last_cont > 0.07 and self._cont_needed():
+            self._last_cont = now
+            moving = True
+        tr = self._tr
+        if tr:
+            el = now - tr["t0"]
+            S = self.host.S
+            for it, delay in tr["items"]:
+                p = max(0.0, min(1.0, (el - delay) / 0.28))
+                e = 1 - (1 - p) ** 3
+                tgt = self.fills.get(it, "#ffffff")
+                try:
+                    self.c.itemconfig(it, fill=_mixhex("#0c0a24", tgt, e))
+                    x, y = self.host.logic[it][0], self.host.logic[it][1]
+                    self.c.coords(it, x * S, (y + (1 - e) * 12) * S)
+                except Exception:
+                    pass
+            for w in tr["wins"]:
+                if el > 0.30:
+                    self.c.itemconfig(w, state="normal")
+            if el > tr["dur"]:
+                for it, _ in tr["items"]:
+                    try:
+                        self.c.itemconfig(it, fill=self.fills.get(it, "#ffffff"))
+                        x, y = self.host.logic[it][0], self.host.logic[it][1]
+                        self.c.coords(it, x * S, y * S)
+                    except Exception:
+                        pass
+                for w in tr["wins"]:
+                    self.c.itemconfig(w, state="normal")
+                self._tr = None
+            moving = True
         if moving:
             self.refresh()
 
@@ -407,6 +537,7 @@ class Scene:
         it = self.c.create_text(x * S, y * S, text=s, fill=fill, anchor=anchor,
                                 font=("Segoe UI", -max(1, round(size * S)), "bold" if bold else "normal"), **kw)
         self.host.logic[it] = [x, y, size, bold, width]
+        self.fills[it] = fill
         self.texts[key] = it
         self.items.append(it)
         self.pages.setdefault(self.tag, []).append(it)
@@ -415,8 +546,13 @@ class Scene:
     def set_text(self, key, s=None, fill=None):
         kw = {}
         if s is not None: kw["text"] = s
-        if fill is not None: kw["fill"] = fill
-        self.c.itemconfig(self.texts[key], **kw)
+        it = self.texts[key]
+        if fill is not None:
+            self.fills[it] = fill
+            kw["fill"] = fill
+            if self._tr and any(i == it for i, _ in self._tr["items"]):
+                kw.pop("fill", None)
+        self.c.itemconfig(it, **kw)
 
     # --- виджеты ---
     def button(self, key, box, label, cb, style="primary", size=14, enabled=None, colors=None, sel=None):
@@ -440,8 +576,11 @@ class Scene:
     def bar(self, box, get):
         self.regions.append({"kind": "bar", "box": box, "get": get, "page": self.tag})
 
-    def dot(self, cx, cy, color_fn, r=5):
-        self.regions.append({"kind": "dot", "c": (cx, cy), "col": color_fn, "r": r, "page": self.tag})
+    def dot(self, cx, cy, color_fn, r=5, pulse=False):
+        self.regions.append({"kind": "dot", "c": (cx, cy), "col": color_fn, "r": r, "pulse": pulse, "page": self.tag})
+
+    def spinner(self, cx, cy, r=8):
+        self.regions.append({"kind": "spinner", "c": (cx, cy), "r": r, "page": self.tag})
 
     def imgbtn(self, box, img, hover, cb, sel=None):
         r = {"kind": "img", "box": box, "img": img, "hover": hover, "cb": cb, "sel": sel or (lambda: False),
@@ -466,13 +605,34 @@ class Scene:
         e = self.host.entry(box, text)
         self.widgets.append(e)
         self.pages.setdefault(self.tag, []).append(e._win)
+        self._wins.add(e._win)
         return e
 
-    def set_page(self, name):
-        self.cur = name
+    def set_page(self, name, anim=True):
+        prev, self.cur = self.cur, name
+        new_items, wins = [], []
         for tg, its in self.pages.items():
+            show = tg in (None, name)
             for i in its:
-                self.c.itemconfig(i, state="normal" if tg in (None, name) else "hidden")
+                self.c.itemconfig(i, state="normal" if show else "hidden")
+                if show and tg == name and anim:
+                    if i in self._wins:
+                        wins.append(i)
+                    elif i in self.host.logic:
+                        new_items.append(i)
+        if anim and (new_items or wins) and (prev != name or self.host.overlay is None):
+            intro = prev is None
+            items = []
+            for i in sorted(new_items, key=lambda i: self.host.logic[i][1]):
+                y = self.host.logic[i][1]
+                items.append((i, min(0.32, y / max(1, self.host.H) * (0.5 if intro else 0.3)) + (0.12 if intro else 0.0)))
+                self.c.itemconfig(i, fill="#0c0a24")
+            for w in wins:
+                self.c.itemconfig(w, state="hidden")
+            self._tr = {"t0": time.perf_counter(), "items": items, "wins": wins,
+                        "dur": (0.9 if intro else 0.6), "prev": self.host.overlay, "intro": intro}
+        else:
+            self._tr = None
         self.refresh()
 
     def _vis(self, r):
@@ -499,10 +659,12 @@ class Scene:
             if k == "button":
                 en = r["en"]()
                 accent = r["style"] == "primary" or (r["style"] == "nav" and r["sel"]())
-                if r["style"] == "nav" and not accent:
+                if r["style"] == "nav":
                     x0, y0, x1, y1 = r["box"]
-                    if hv > 0.02:
-                        self.pt._fill(ov, r["box"], (255, 255, 255, int(22 * hv)), self.pt.mask(x1 - x0, y1 - y0, 12))
+                    sv = r.get("sv", 1.0 if accent else 0.0)
+                    if hv > 0.02 and sv < 0.95:
+                        self.pt._fill(ov, r["box"], (255, 255, 255, int(22 * hv * (1 - sv))), self.pt.mask(x1 - x0, y1 - y0, 12))
+                    self.pt.navpill(ov, r["box"], sv)
                 else:
                     self.pt.glassbtn(ov, r["box"], hv, en, accent)
             elif k == "switch":
@@ -512,7 +674,15 @@ class Scene:
             elif k == "bar":
                 self.pt.bar(ov, r["box"], r["get"]())
             elif k == "dot":
-                self.pt.dot(ov, r["c"][0], r["c"][1], r["col"](), r.get("r", 5))
+                c = r["col"]()
+                self.pt.dot(ov, r["c"][0], r["c"][1], c, r.get("r", 5))
+                if r.get("pulse"):
+                    ph = (self.pt.clock % 2.0) / 2.0
+                    R = int(r.get("r", 5) + 1 + ph * 9)
+                    self.pt._fill(ov, (r["c"][0] - R, r["c"][1] - R, r["c"][0] + R, r["c"][1] + R),
+                                  tuple(c) + (int(150 * (1 - ph)),), self.pt.mask(2 * R, 2 * R, R, 2))
+            elif k == "spinner":
+                self.pt.spinner(ov, r["c"][0], r["c"][1], r["r"], int(self.pt.clock * 420) % 360)
             elif k == "check":
                 self.pt.checkbox(ov, r["box"], r["get"](), r is self.hover)
             elif k == "glyph":
@@ -528,6 +698,14 @@ class Scene:
                     self.pt.image(ov, layer, (b[0], b[1]))
                 if r["sel"]():
                     self.pt._fill(ov, b, (255, 255, 255, 70), self.pt.mask(b[2] - b[0], b[3] - b[1], 10, 2))
+        tr = self._tr
+        if tr:
+            el = time.perf_counter() - tr["t0"]
+            e = max(0.0, min(1.0, el / (0.55 if tr["intro"] else 0.32)))
+            e = 1 - (1 - e) ** 3
+            prev = tr["prev"] if tr["prev"] is not None else Image.new("RGBA", ov.size, (0, 0, 0, 0))
+            if e < 1.0:
+                ov = Image.blend(prev, ov, e)
         return ov
 
     def refresh(self):
@@ -610,13 +788,30 @@ class Host:
             pass
         self.root = tk.Tk()
         self.root.title(title)
+        self.KEY = "#010101"          # цвет-«дырка»: за скруглёнными углами окно прозрачное
+        self.frameless = True
+        try:
+            self.root.overrideredirect(True)
+        except Exception:
+            self.frameless = False
+        try:
+            self.root.attributes("-transparentcolor", self.KEY)
+        except Exception:
+            pass
+        try:
+            self.root.attributes("-alpha", 0.0)   # плавное появление окна
+        except Exception:
+            pass
         self.W, self.H = w, h
+        self._drag, self._min, self._max, self._normal_geo = None, False, False, None
+        self.wb = {"min": (w - 100, 12, w - 74, 36), "max": (w - 72, 12, w - 46, 36), "close": (w - 44, 12, w - 18, 36)}
+        self.wbh, self.wb_hover = {"min": 0.0, "max": 0.0, "close": 0.0}, None
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
         # стартовый масштаб по разрешению экрана: окно занимает ~80% экрана, пропорции сохраняются
         self.S = round(max(1.0, min(sw * 0.80 / w, sh * 0.82 / h, 2.5)), 3)
         cw, ch = int(w * self.S), int(h * self.S)
         self.logic, self.entries, self._force, self._rs = {}, [], True, None
-        self.root.configure(bg="#08061a")
+        self.root.configure(bg=self.KEY)
         self.root.minsize(w, h)
         self.root.geometry(f"{cw}x{ch}+{max(0, (sw-cw)//2)}+{max(0, (sh-ch)//3)}")
         try:
@@ -624,18 +819,18 @@ class Host:
         except Exception:
             pass
         self.painter = Painter(w, h)
-        self.canvas = tk.Canvas(self.root, width=cw, height=ch, highlightthickness=0, bd=0, bg="#08061a")
+        self.canvas = tk.Canvas(self.root, width=cw, height=ch, highlightthickness=0, bd=0, bg=self.KEY)
         self.canvas.pack(expand=True)
         self.bg = self.canvas.create_image(0, 0, anchor="nw")
         import random
         self.rnd = random
         self.flakes = []
         for i in range(22):
-            x, y, r = random.uniform(0, w), random.uniform(0, h), random.choice((1, 1.5, 2))
+            x, y, r = random.uniform(24, w - 24), random.uniform(24, h - 24), random.choice((1, 1.5, 2))
             it = self.canvas.create_oval(x - r, y - r, x + r, y + r, fill=random.choice(("#9d85ff", "#7c5cff", "#c9bcff")), width=0)
             self.flakes.append([it, x, y, random.uniform(0.2, 0.6) * (r / 2 + 0.4), random.uniform(0, 6.28), random.uniform(0.01, 0.03), r])
         for i in range(5):
-            x, y = random.uniform(0, w), random.uniform(0, h)
+            x, y = random.uniform(24, w - 24), random.uniform(24, h - 24)
             it = self.canvas.create_text(x, y, text="✦", fill="#6d4df0", font=("Segoe UI Symbol", -random.choice((10, 12, 14))))
             self.flakes.append([it, x, y, random.uniform(0.2, 0.5), random.uniform(0, 6.28), random.uniform(0.01, 0.025), 0])
         self.scene = None
@@ -643,16 +838,156 @@ class Host:
         self.t0 = time.time()
         self.overlay = None
         try:
-            self._icon = ImageTk.PhotoImage(self.painter.icon(64))
+            from .common import RES
+            self.root.iconbitmap(default=os.path.join(RES, "assets", "icon.ico"))
+        except Exception:
+            pass
+        try:
+            from .common import RES
+            png = os.path.join(RES, "assets", "icon.png")
+            im = Image.open(png).convert("RGBA").resize((64, 64), Image.LANCZOS) if os.path.exists(png) else self.painter.icon(64)
+            self._icon = ImageTk.PhotoImage(im)
             self.root.iconphoto(True, self._icon)
         except Exception:
             pass
         c = self.canvas
-        c.bind("<Motion>", lambda e: self.scene and self.scene.motion(e.x / self.S, e.y / self.S))
-        c.bind("<Button-1>", lambda e: self.scene and self.scene.press(e.x / self.S, e.y / self.S))
-        c.bind("<B1-Motion>", lambda e: self.scene and self.scene.move(e.x / self.S, e.y / self.S))
-        c.bind("<ButtonRelease-1>", lambda e: self.scene and self.scene.release(e.x / self.S, e.y / self.S))
+        c.bind("<Motion>", self._motion)
+        c.bind("<Button-1>", self._press)
+        c.bind("<B1-Motion>", self._move)
+        c.bind("<ButtonRelease-1>", self._release)
+        self.root.bind("<Map>", self._on_map)
         self.root.bind("<Configure>", self._on_cfg)
+
+    # ---------- своя рамка окна: перетаскивание, свернуть/развернуть/закрыть ----------
+    def _wb_at(self, x, y):
+        for k, (x0, y0, x1, y1) in self.wb.items():
+            if x0 <= x <= x1 and y0 <= y <= y1:
+                return k
+        return None
+
+    def _motion(self, e):
+        x, y = e.x / self.S, e.y / self.S
+        k = self._wb_at(x, y)
+        if k != self.wb_hover:
+            self.wb_hover = k
+        if k:
+            self.canvas.config(cursor="hand2")
+            if self.scene and self.scene.hover is not None:
+                self.scene.hover = None
+                self.scene.refresh()
+            return
+        if self.scene:
+            self.scene.motion(x, y)
+
+    def _press(self, e):
+        x, y = e.x / self.S, e.y / self.S
+        k = self._wb_at(x, y)
+        if k:
+            return {"min": self.minimize, "max": self.toggle_max, "close": self.close}[k]()
+        try:
+            self.root.focus_force()
+        except Exception:
+            pass
+        if not self.scene:
+            return
+        hit = self.scene._hit(x, y)
+        self.scene.press(x, y)
+        if hit is None and self.frameless and not self._max:
+            self._drag = (e.x_root - self.root.winfo_x(), e.y_root - self.root.winfo_y())
+
+    def _move(self, e):
+        if self._drag:
+            self.root.geometry(f"+{e.x_root - self._drag[0]}+{e.y_root - self._drag[1]}")
+        elif self.scene:
+            self.scene.move(e.x / self.S, e.y / self.S)
+
+    def _release(self, e):
+        self._drag = None
+        if self.scene:
+            self.scene.release(e.x / self.S, e.y / self.S)
+
+    def close(self):
+        self.root.destroy()
+
+    def minimize(self):
+        self._min = True
+        try:
+            self.root.overrideredirect(False)
+        except Exception:
+            pass
+        self.root.iconify()
+
+    def _on_map(self, e):
+        if e.widget is self.root and self._min:
+            self._min = False
+            self.root.after(40, self._reframe)
+
+    def _reframe(self):
+        try:
+            self.root.overrideredirect(True)
+            self.root.attributes("-transparentcolor", self.KEY)
+        except Exception:
+            pass
+        self._fix_taskbar()
+
+    def _fix_taskbar(self):
+        """Окно без рамки по умолчанию пропадает с панели задач — возвращаем."""
+        try:
+            import ctypes
+            u = ctypes.windll.user32
+            hwnd = u.GetParent(self.root.winfo_id()) or self.root.winfo_id()
+            st = u.GetWindowLongW(hwnd, -20)
+            u.SetWindowLongW(hwnd, -20, (st & ~0x80) | 0x40000)
+            self.root.withdraw()
+            self.root.after(30, self._show_again)
+        except Exception:
+            pass
+
+    def _show_again(self):
+        self.root.deiconify()
+        try:
+            self.root.focus_force()
+        except Exception:
+            pass
+
+    def toggle_max(self):
+        if not self._max:
+            self._normal_geo = (self.root.winfo_x(), self.root.winfo_y(), self.root.winfo_width(), self.root.winfo_height())
+            sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight() - 48
+            s2 = min(sw / self.W, sh / self.H)
+            cw, ch = int(self.W * s2), int(self.H * s2)
+            self.root.geometry(f"{cw}x{ch}+{(sw - cw) // 2}+{max(0, (sh - ch) // 2)}")
+            self._max = True
+        else:
+            x, y, w, h = self._normal_geo
+            self.root.geometry(f"{w}x{h}+{x}+{y}")
+            self._max = False
+
+    def _draw_wb(self, frame):
+        d = ImageDraw.Draw(frame, "RGBA")
+        c = (225, 215, 255, 240)
+        for k, (x0, y0, x1, y1) in self.wb.items():
+            hv = self.wbh[k]
+            if hv > 0.01:
+                col = (235, 60, 90, int(170 * hv)) if k == "close" else (255, 255, 255, int(44 * hv))
+                d.rounded_rectangle((x0, y0, x1, y1), 8, fill=col)
+            cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+            if k == "min":
+                d.line((cx - 6, cy + 1, cx + 6, cy + 1), fill=c, width=2)
+            elif k == "max":
+                d.rectangle((cx - 5, cy - 5, cx + 5, cy + 5), outline=c, width=2)
+            else:
+                d.line((cx - 5, cy - 5, cx + 5, cy + 5), fill=c, width=2)
+                d.line((cx - 5, cy + 5, cx + 5, cy - 5), fill=c, width=2)
+
+    def _fade_in(self, a=0.0):
+        a = min(1.0, a + 0.1)
+        try:
+            self.root.attributes("-alpha", a)
+        except Exception:
+            return
+        if a < 1.0:
+            self.root.after(16, lambda: self._fade_in(a))
 
     # ---------- масштабирование ----------
     def _on_cfg(self, e):
@@ -732,6 +1067,15 @@ class Host:
             traceback.print_exc()
         try:
             if self.scene and self.root.state() != "iconic":
+                moved = False
+                for k in self.wbh:      # плавная подсветка кнопок окна
+                    t = 1.0 if self.wb_hover == k else 0.0
+                    n = self.wbh[k] + (t - self.wbh[k]) * 0.35
+                    n = t if abs(n - t) < 0.02 else n
+                    if n != self.wbh[k]:
+                        self.wbh[k], moved = n, True
+                if moved:
+                    self._force = True
                 self.scene.tick_anim()
                 if self.scene.dirty or self.overlay is None or self._force:
                     if self.scene.dirty or self.overlay is None:
@@ -740,6 +1084,11 @@ class Host:
                     self._force = False
                     frame = self.painter.background().copy()
                     frame.paste(self.overlay, (0, 0), self.overlay)
+                    edge = self.painter.win_edge()
+                    frame.paste(edge, (0, 0), edge)
+                    self._draw_wb(frame)
+                    # скруглённые края окна: всё за углами заливаем цветом-«дыркой»
+                    frame = Image.composite(frame, self.painter.win_key(), self.painter.win_mask())
                     if abs(self.S - 1.0) > 0.001:
                         frame = frame.resize((int(self.W * self.S), int(self.H * self.S)), Image.BILINEAR)
                     self._photo = self.ImageTk.PhotoImage(frame)
@@ -758,8 +1107,8 @@ class Host:
             y += v
             ph += dph
             x += math.sin(ph) * 0.6
-            if y > self.H + 10:
-                y, x = -10, self.rnd.uniform(0, self.W)
+            if y > self.H - 16:
+                y, x = 16, self.rnd.uniform(24, self.W - 24)
             f[1], f[2], f[4] = x, y, ph
             S = self.S
             if r:
@@ -769,4 +1118,15 @@ class Host:
 
     def run(self):
         self._tick()
+        self.root.update_idletasks()
+        if self.frameless:
+            self._fix_taskbar()
+        self.root.after(120, self._fade_in)
+        self.root.after(1500, lambda: self._safe_alpha())
         self.root.mainloop()
+
+    def _safe_alpha(self):
+        try:
+            self.root.attributes("-alpha", 1.0)
+        except Exception:
+            pass
