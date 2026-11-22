@@ -226,9 +226,8 @@ class LauncherScene(Scene):
             except Exception:
                 pass
         threading.Thread(target=work, daemon=True).start()
-        # пока идёт игра — проверяем чаще, чтобы бан сработал быстро и во время игры
-        playing = self.proc is not None and self.proc.poll() is None
-        self.host.root.after(30 * 1000 if playing else 10 * 60 * 1000, self._lic_recheck)
+        # проверяем часто и в лаунчере, и во время игры — бан должен сработать почти сразу
+        self.host.root.after(15 * 1000, self._lic_recheck)
 
     def _kick_banned(self):
         if self.proc:

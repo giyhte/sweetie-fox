@@ -299,9 +299,11 @@ class Scene:
 
     # --- тексты ---
     def text(self, key, x, y, s, size=13, bold=False, fill="#e8eaff", anchor="nw", width=None):
-        kw = {"width": width} if width else {}
-        it = self.c.create_text(x, y, text=s, fill=fill, anchor=anchor,
-                                font=("Segoe UI", -size, "bold" if bold else "normal"), **kw)
+        S = self.host.S
+        kw = {"width": int(width * S)} if width else {}
+        it = self.c.create_text(x * S, y * S, text=s, fill=fill, anchor=anchor,
+                                font=("Segoe UI", -max(1, round(size * S)), "bold" if bold else "normal"), **kw)
+        self.host.logic[it] = [x, y, size, bold, width]
         self.texts[key] = it
         self.items.append(it)
         self.pages.setdefault(self.tag, []).append(it)
@@ -406,6 +408,7 @@ class Scene:
 
     def destroy(self):
         for i in self.items:
+            self.host.logic.pop(i, None)
             self.c.delete(i)
         for w in self.widgets:
             try: w.destroy()
@@ -468,13 +471,32 @@ class Host:
         import tkinter as tk
         from PIL import ImageTk
         self.tk, self.ImageTk = tk, ImageTk
+        try:   # чёткая картинка при масштабе Windows 125–200%
+            import ctypes
+            try:
+                ctypes.windll.shcore.SetProcessDpiAwareness(1)
+            except Exception:
+                ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
         self.root = tk.Tk()
         self.root.title(title)
-        self.root.resizable(False, False)
-        self.root.geometry(f"{w}x{h}+{(self.root.winfo_screenwidth()-w)//2}+{(self.root.winfo_screenheight()-h)//3}")
+        self.W, self.H = w, h
+        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        # стартовый масштаб по разрешению экрана: окно занимает ~80% экрана, пропорции сохраняются
+        self.S = round(max(1.0, min(sw * 0.80 / w, sh * 0.82 / h, 2.5)), 3)
+        cw, ch = int(w * self.S), int(h * self.S)
+        self.logic, self.entries, self._force, self._rs = {}, [], True, None
+        self.root.configure(bg="#09081c")
+        self.root.minsize(w, h)
+        self.root.geometry(f"{cw}x{ch}+{max(0, (sw-cw)//2)}+{max(0, (sh-ch)//3)}")
+        try:
+            self.root.aspect(w, h, w, h)   # держим пропорции при растягивании окна
+        except Exception:
+            pass
         self.painter = Painter(w, h)
-        self.canvas = tk.Canvas(self.root, width=w, height=h, highlightthickness=0, bd=0, bg="#09081c")
-        self.canvas.pack()
+        self.canvas = tk.Canvas(self.root, width=cw, height=ch, highlightthickness=0, bd=0, bg="#09081c")
+        self.canvas.pack(expand=True)
         self.bg = self.canvas.create_image(0, 0, anchor="nw")
         import random
         self.rnd = random
@@ -487,7 +509,6 @@ class Host:
             x, y = random.uniform(0, w), random.uniform(0, h)
             it = self.canvas.create_text(x, y, text=random.choice("❄✦❅"), fill="#e8e2ff", font=("Segoe UI Symbol", -random.choice((12, 14, 17))))
             self.flakes.append([it, x, y, random.uniform(0.5, 1.1), random.uniform(0, 6.28), random.uniform(0.01, 0.025), 0])
-        self.W, self.H = w, h
         self.scene = None
         self.q = queue.Queue()
         self.t0 = time.time()
@@ -498,19 +519,68 @@ class Host:
         except Exception:
             pass
         c = self.canvas
-        c.bind("<Motion>", lambda e: self.scene and self.scene.motion(e.x, e.y))
-        c.bind("<Button-1>", lambda e: self.scene and self.scene.press(e.x, e.y))
-        c.bind("<B1-Motion>", lambda e: self.scene and self.scene.move(e.x, e.y))
-        c.bind("<ButtonRelease-1>", lambda e: self.scene and self.scene.release(e.x, e.y))
+        c.bind("<Motion>", lambda e: self.scene and self.scene.motion(e.x / self.S, e.y / self.S))
+        c.bind("<Button-1>", lambda e: self.scene and self.scene.press(e.x / self.S, e.y / self.S))
+        c.bind("<B1-Motion>", lambda e: self.scene and self.scene.move(e.x / self.S, e.y / self.S))
+        c.bind("<ButtonRelease-1>", lambda e: self.scene and self.scene.release(e.x / self.S, e.y / self.S))
+        self.root.bind("<Configure>", self._on_cfg)
+
+    # ---------- масштабирование ----------
+    def _on_cfg(self, e):
+        if e.widget is not self.root:
+            return
+        if self._rs:
+            self.root.after_cancel(self._rs)
+        self._rs = self.root.after(40, self._apply_size)
+
+    def _apply_size(self):
+        self._rs = None
+        try:
+            ns = max(1.0, min(self.root.winfo_width() / self.W, self.root.winfo_height() / self.H, 4.0))
+        except Exception:
+            return
+        if abs(ns - self.S) > 0.004:
+            self.rescale(ns)
+
+    def rescale(self, S):
+        self.S = S
+        cw, ch = int(self.W * S), int(self.H * S)
+        c = self.canvas
+        c.config(width=cw, height=ch)
+        for it, (x, y, size, bold, width) in list(self.logic.items()):
+            try:
+                c.coords(it, x * S, y * S)
+                kw = {"font": ("Segoe UI", -max(1, round(size * S)), "bold" if bold else "normal")}
+                if width:
+                    kw["width"] = int(width * S)
+                c.itemconfig(it, **kw)
+            except Exception:
+                self.logic.pop(it, None)
+        for e, box in list(self.entries):
+            try:
+                c.coords(e._win, box[0] * S, box[1] * S)
+                c.itemconfig(e._win, width=int((box[2] - box[0]) * S), height=int((box[3] - box[1]) * S))
+                e.config(font=("Segoe UI", -max(1, round(15 * S))))
+            except Exception:
+                self.entries.remove((e, box))
+        self._force = True
+
+    def place(self, it, x, y):
+        """Двигает canvas-элемент в логических координатах (880x620 и т.п.)."""
+        if it in self.logic:
+            self.logic[it][0], self.logic[it][1] = x, y
+        self.canvas.coords(it, x * self.S, y * self.S)
 
     def entry(self, box, text):
         tk = self.tk
         e = tk.Entry(self.root, bd=0, relief="flat", bg="#15183a", fg="#ffffff", insertbackground="#ffffff",
-                     font=("Segoe UI", -15), highlightthickness=1, highlightbackground="#3b4080",
+                     font=("Segoe UI", -max(1, round(15 * self.S))), highlightthickness=1, highlightbackground="#3b4080",
                      highlightcolor="#8b7cff", disabledbackground="#15183a")
         e.insert(0, text)
-        e._win = self.canvas.create_window(box[0], box[1], anchor="nw", window=e, width=box[2] - box[0],
-                                  height=box[3] - box[1])
+        S = self.S
+        e._win = self.canvas.create_window(box[0] * S, box[1] * S, anchor="nw", window=e,
+                                           width=int((box[2] - box[0]) * S), height=int((box[3] - box[1]) * S))
+        self.entries.append((e, tuple(box)))
         return e
 
     def set_scene(self, scene):
@@ -534,11 +604,15 @@ class Host:
         try:
             if self.scene and self.root.state() != "iconic":
                 self.scene.tick_anim()
-                if self.scene.dirty or self.overlay is None:
-                    self.overlay = self.scene.paint()
-                    self.scene.dirty = False
+                if self.scene.dirty or self.overlay is None or self._force:
+                    if self.scene.dirty or self.overlay is None:
+                        self.overlay = self.scene.paint()
+                        self.scene.dirty = False
+                    self._force = False
                     frame = self.painter.background().copy()
                     frame.paste(self.overlay, (0, 0), self.overlay)
+                    if abs(self.S - 1.0) > 0.001:
+                        frame = frame.resize((int(self.W * self.S), int(self.H * self.S)), Image.BILINEAR)
                     self._photo = self.ImageTk.PhotoImage(frame)
                     self.canvas.itemconfig(self.bg, image=self._photo)
                 self._snow()
@@ -558,10 +632,11 @@ class Host:
             if y > self.H + 10:
                 y, x = -10, self.rnd.uniform(0, self.W)
             f[1], f[2], f[4] = x, y, ph
+            S = self.S
             if r:
-                c.coords(it, x - r, y - r, x + r, y + r)
+                c.coords(it, (x - r) * S, (y - r) * S, (x + r) * S, (y + r) * S)
             else:
-                c.coords(it, x, y)
+                c.coords(it, x * S, y * S)
 
     def run(self):
         self._tick()

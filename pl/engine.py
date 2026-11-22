@@ -191,6 +191,66 @@ def _unzip(zpath, dest, ctx, label):
     os.remove(zpath)
 
 
+def _force_rm(path):
+    """Удаляет файл/папку; снимает read-only, 4 попытки (антивирус/индексатор в Windows). True если удалено."""
+    import stat
+    for i in range(4):
+        try:
+            if os.path.isdir(path) and not os.path.islink(path):
+                shutil.rmtree(path, onerror=lambda f, p, e: (os.chmod(p, stat.S_IWRITE), f(p)))
+            elif os.path.lexists(path):
+                try:
+                    os.remove(path)
+                except PermissionError:
+                    os.chmod(path, stat.S_IWRITE)
+                    os.remove(path)
+            if not os.path.lexists(path):
+                return True
+        except Exception:
+            pass
+        time.sleep(0.3 * (i + 1))
+    return not os.path.lexists(path)
+
+
+def _sync_tree(src, dst):
+    """Делает dst точной копией src: копирует новое/изменённое, удаляет «сирот» (старые файлы вроде PulseSky.java).
+    Если сироту удалить не удалось — собираем в новой чистой папке, чтобы мусор не попал в компиляцию."""
+    stale = False
+    if os.path.isdir(dst):
+        want = set()
+        for root, dirs, files in os.walk(src):
+            rel = os.path.relpath(root, src)
+            want.add(os.path.normpath(rel))
+            for fn in files:
+                want.add(os.path.normpath(os.path.join(rel, fn)))
+        for root, dirs, files in os.walk(dst, topdown=False):
+            rel = os.path.relpath(root, dst)
+            for fn in files:
+                if os.path.normpath(os.path.join(rel, fn)) not in want:
+                    if not _force_rm(os.path.join(root, fn)):
+                        stale = True
+            if os.path.normpath(rel) not in want and rel != ".":
+                _force_rm(root)
+    if stale:
+        # не смогли удалить — уводим папку в сторону и копируем начисто
+        bad = dst + ".old-" + uuid.uuid4().hex[:6]
+        try:
+            os.replace(dst, bad)
+        except Exception:
+            raise RuntimeError("Не удалось очистить старые исходники в " + dst +
+                               ". Закройте антивирус/Java-процессы или удалите папку tools\\build вручную.")
+        _force_rm(bad)
+    for root, dirs, files in os.walk(src):
+        out = os.path.join(dst, os.path.relpath(root, src))
+        os.makedirs(out, exist_ok=True)
+        for fn in files:
+            a, b = os.path.join(root, fn), os.path.join(out, fn)
+            if not os.path.exists(b) or os.path.getsize(a) != os.path.getsize(b) or open(a, "rb").read() != open(b, "rb").read():
+                shutil.copy2(a, b)
+    # старые скомпилированные классы тоже могут держать удалённые файлы
+    _force_rm(os.path.join(os.path.dirname(dst), "build", "classes"))
+
+
 def build_mod(P, ctx):
     """Сам скачивает JDK 21 и Gradle (один раз), собирает мод из modsrc. Возвращает путь к jar."""
     if not WIN:
@@ -213,8 +273,7 @@ def build_mod(P, ctx):
     work = os.path.join(P.tools, "build")
     os.makedirs(work, exist_ok=True)
     # обновляем только исходники; .gradle и build остаются (кэш → повторная сборка в разы быстрее)
-    shutil.rmtree(os.path.join(work, "src"), ignore_errors=True)
-    shutil.copytree(os.path.join(P.modsrc, "src"), os.path.join(work, "src"))
+    _sync_tree(os.path.join(P.modsrc, "src"), os.path.join(work, "src"))
     for fn in os.listdir(P.modsrc):
         if os.path.isfile(os.path.join(P.modsrc, fn)):
             shutil.copy2(os.path.join(P.modsrc, fn), os.path.join(work, fn))

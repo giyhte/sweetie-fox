@@ -101,7 +101,7 @@ class GateScene(Scene):
             e = 1 - (1 - p) ** 3
             try:
                 self.c.itemconfig(it, fill=_hex(_mix(BG, _rgb(col), e)))
-                self.c.coords(it, 440, y + (1 - e) * 22)
+                self.host.place(it, 440, y + (1 - e) * 22)
             except Exception:
                 pass
         if step < N + 30 + 22:
