@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """Градиентный интерфейс: Pillow рисует фон и стекло, Tk — текст и ввод."""
-import math, os, time, queue, traceback
+import math, os, sys, time, queue, traceback
 from PIL import Image, ImageDraw, ImageFilter, ImageChops, ImageFont
+
+WIN = sys.platform.startswith("win")
 
 VIOLET, PINK, CYAN, BLUE = (104, 66, 240), (170, 130, 255), (150, 118, 255), (80, 70, 220)
 
@@ -789,11 +791,11 @@ class Host:
         self.root = tk.Tk()
         self.root.title(title)
         self.KEY = "#010101"          # цвет-«дырка»: за скруглёнными углами окно прозрачное
-        self.frameless = True
-        try:
-            self.root.overrideredirect(True)
-        except Exception:
-            self.frameless = False
+        # Окно остаётся НАСТОЯЩИМ top-level (не overrideredirect) — так Windows сама
+        # нормально ведёт панель задач, Alt+Tab, сворачивание/восстановление и снэппинг.
+        # Рамку и заголовок убираем позже (после создания HWND) стилями Win32, а не
+        # эмуляцией безрамочного окна — это надёжнее и не требует withdraw/deiconify.
+        self.frameless = WIN
         try:
             self.root.attributes("-transparentcolor", self.KEY)
         except Exception:
@@ -818,6 +820,8 @@ class Host:
             self.root.aspect(w, h, w, h)   # держим пропорции при растягивании окна
         except Exception:
             pass
+        if self.frameless:
+            self.root.after(0, self._strip_chrome)
         self.painter = Painter(w, h)
         self.canvas = tk.Canvas(self.root, width=cw, height=ch, highlightthickness=0, bd=0, bg=self.KEY)
         self.canvas.pack(expand=True)
@@ -855,7 +859,6 @@ class Host:
         c.bind("<Button-1>", self._press)
         c.bind("<B1-Motion>", self._move)
         c.bind("<ButtonRelease-1>", self._release)
-        self.root.bind("<Map>", self._on_map)
         self.root.bind("<Configure>", self._on_cfg)
 
     # ---------- своя рамка окна: перетаскивание, свернуть/развернуть/закрыть ----------
@@ -910,61 +913,31 @@ class Host:
         self.root.destroy()
 
     def minimize(self):
-        self._min = True
-        try:
-            self.root.overrideredirect(False)
-        except Exception:
-            pass
         self.root.iconify()
 
-    def _on_map(self, e):
-        if e.widget is self.root and self._min:
-            self._min = False
-            self.root.after(40, self._reframe)
-
-    def _reframe(self):
-        try:
-            self.root.overrideredirect(True)
-            self.root.attributes("-transparentcolor", self.KEY)
-        except Exception:
-            pass
-        # Полный трюк с withdraw/deiconify (_fix_taskbar) нужен только один раз при
-        # самом первом старте, чтобы Windows применила extended-стиль окна и показала
-        # иконку в панели задач. Если делать это ещё и при каждом восстановлении из
-        # трея — окно видимо гаснет и сразу возвращается, что выглядит как "свернул
-        # и тут же развернул обратно".
-
-    def _fix_taskbar(self):
-        """Окно без рамки по умолчанию пропадает с панели задач — возвращаем."""
+    def _strip_chrome(self):
+        """Снимаем системную рамку/заголовок у НАСТОЯЩЕГО top-level окна (стилями Win32),
+        вместо overrideredirect. Панель задач, сворачивание и восстановление остаются
+        полностью штатными — их ведёт сама Windows, без наших withdraw/deiconify-трюков."""
         try:
             import ctypes
+            GWL_STYLE = -16
+            WS_CAPTION = 0x00C00000
+            WS_THICKFRAME = 0x00040000
+            WS_MINIMIZEBOX = 0x00020000
+            WS_SYSMENU = 0x00080000
+            hwnd = self.root.winfo_id()
             u = ctypes.windll.user32
-            hwnd = u.GetParent(self.root.winfo_id()) or self.root.winfo_id()
-            st = u.GetWindowLongW(hwnd, -20)
-            u.SetWindowLongW(hwnd, -20, (st & ~0x80) | 0x40000)
-            self.root.withdraw()
-            self.root.after(30, self._show_again)
+            # у Tk-окна winfo_id() на Windows отдаёт HWND дочернего клиентского окна;
+            # реальная рамка/заголовок у его родителя (GetParent)
+            top = u.GetParent(hwnd) or hwnd
+            style = u.GetWindowLongW(top, GWL_STYLE)
+            style = (style & ~(WS_CAPTION | WS_THICKFRAME)) | WS_MINIMIZEBOX | WS_SYSMENU
+            u.SetWindowLongW(top, GWL_STYLE, style)
+            SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_FRAMECHANGED = 0x2, 0x1, 0x4, 0x20
+            u.SetWindowPos(top, 0, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED)
         except Exception:
             pass
-
-    def _show_again(self):
-        self.root.deiconify()
-        try:
-            self.root.focus_force()
-        except Exception:
-            pass
-
-    def _workarea(self):
-        """Рабочая область экрана (без панели задач), по возможности через Windows API."""
-        try:
-            import ctypes, ctypes.wintypes
-            rect = ctypes.wintypes.RECT()
-            ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0)  # SPI_GETWORKAREA
-            if rect.right > rect.left and rect.bottom > rect.top:
-                return rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
-        except Exception:
-            pass
-        return 0, 0, self.root.winfo_screenwidth(), self.root.winfo_screenheight() - 48
 
     def toggle_max(self):
         if not self._max:
@@ -997,6 +970,7 @@ class Host:
                 d.line((cx - 5, cy + 5, cx + 5, cy - 5), fill=c, width=2)
 
     def _fade_in(self, a=0.0):
+
         a = min(1.0, a + 0.1)
         try:
             self.root.attributes("-alpha", a)
@@ -1134,9 +1108,6 @@ class Host:
 
     def run(self):
         self._tick()
-        self.root.update_idletasks()
-        if self.frameless:
-            self._fix_taskbar()
         self.root.after(120, self._fade_in)
         self.root.after(1500, lambda: self._safe_alpha())
         self.root.mainloop()
