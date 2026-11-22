@@ -3,7 +3,7 @@
 import os, sys, re, subprocess
 from .common import *
 
-REPO = "giyhte/swetie"
+REPO = "giyhte/sweetie-fox"
 
 
 def _ver(t):
