@@ -76,7 +76,8 @@ class InstallScene(Scene):
                                         else "Готово!")))
         except Exception as e:
             self.state = "ask"
-            post(lambda: (self.set_text("go", "УСТАНОВИТЬ"), self.set_text("msg", f"Ошибка: {e}")))
+            err = f"Ошибка: {e}"
+            post(lambda: (self.set_text("go", "УСТАНОВИТЬ"), self.set_text("msg", err)))
 
 
 def main():

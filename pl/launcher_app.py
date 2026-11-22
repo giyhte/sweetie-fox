@@ -160,8 +160,9 @@ class LauncherScene(Scene):
         try:
             updater.apply(url, lambda f: post(lambda: self._progress(f)))
         except Exception as e:
+            err = f"Обновление не удалось: {e}"
             post(lambda: (setattr(self, "busy", False), self.refresh_state(),
-                          self.set_text("status", f"Обновление не удалось: {e}")))
+                          self.set_text("status", err)))
 
     # --- состояние ---
     def go(self, k):
@@ -218,25 +219,34 @@ class LauncherScene(Scene):
             try:
                 self.lic.check()
             except lic_mod.LicenseError as e:
-                code = e.code
-                if code == "banned":
-                    self.host.post(self._kick_banned)
+                code, msg = e.code, str(e)
+                if code in ("banned", "session"):
+                    # бан удаляет сессии на сервере, поэтому «session» тоже значит «выбить»
+                    self.host.post(self._kick_banned if code == "banned" else
+                                   (lambda: self._kick_session(msg)))
                 else:
-                    self.host.post(lambda: self._gate(str(e), "ext" if code == "expired" else "login"))
+                    self.host.post(lambda: self._gate(msg, "ext" if code == "expired" else "login"))
             except Exception:
-                pass
+                pass   # нет связи с сервером — играем дальше (офлайн-запас)
         threading.Thread(target=work, daemon=True).start()
         # проверяем часто и в лаунчере, и во время игры — бан должен сработать почти сразу
         self.host.root.after(15 * 1000, self._lic_recheck)
 
-    def _kick_banned(self):
+    def _kill_game(self):
         if self.proc:
             try:
                 self.proc.terminate()
             except Exception:
                 pass
             self.proc = None
+
+    def _kick_banned(self):
+        self._kill_game()
         self._gate("Вы получили блокировку", "login")
+
+    def _kick_session(self, msg):
+        self._kill_game()
+        self._gate(msg or "Сессия завершена — войди заново", "login")
 
     def _gate(self, note="", mode="login"):
         if not self._alive:
@@ -279,7 +289,8 @@ class LauncherScene(Scene):
             try:
                 proc = engine.launch(self.P, self.cfg)
             except Exception as e:
-                return post(lambda: self._launch_failed(str(e)))
+                err = str(e)
+                return post(lambda: self._launch_failed(err))
             post(lambda: self._launch_started(proc))
         threading.Thread(target=work, daemon=True).start()
 

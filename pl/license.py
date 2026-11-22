@@ -3,7 +3,7 @@
 import os, json, time, uuid, hashlib, platform, urllib.request, urllib.error
 
 # ↓↓↓ АДРЕС ТВОЕГО СЕРВЕРА ЛИЦЕНЗИЙ (можно переопределить файлом license_server.txt рядом с лаунчером)
-SERVER = "https://kikisds.pythonanywhere.com/"
+SERVER = "http://127.0.0.1:8787"
 OFFLINE_GRACE = 3 * 86400  # сколько можно играть без связи с сервером после последней успешной проверки
 
 

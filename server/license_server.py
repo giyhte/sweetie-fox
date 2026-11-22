@@ -243,8 +243,7 @@ def adm_delkey(c, d):
 
 def adm_ban(c, d):
     c.execute("UPDATE users SET banned=? WHERE username=?", (1 if d.get("banned", True) else 0, d.get("username")))
-    if d.get("banned", True):
-        c.execute("DELETE FROM sessions WHERE user_id=(SELECT id FROM users WHERE username=?)", (d.get("username"),))
+    # сессии НЕ удаляем: api_check/login и так отвечают code="banned", и клиент показывает причину
     return {"ok": True}
 
 
