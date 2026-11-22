@@ -415,9 +415,10 @@ def install_all(P, cfg, ctx, force=False):
 
 
 # ---------- запуск ----------
-def launch(P, cfg):
+def launch(P, cfg, lic=None):
     import threading
     import minecraft_launcher_lib as mll
+    from . import license as lic_mod
     vid = find_version(P)
     if not vid:
         raise RuntimeError("Игра не установлена")
@@ -441,8 +442,15 @@ def launch(P, cfg):
     except Exception:
         pass
     cmd = mll.command.get_minecraft_command(vid, P.game, opts)
+    env = dict(os.environ)
+    # передаём собственному меню-моду токен лицензии — без него (например, если jar утащат
+    # в другой лаунчер) меню просто не включится, см. PulseLicense.java
+    if lic is not None and lic.d.get("token"):
+        env["SF_TOKEN"] = lic.d["token"]
+        env["SF_HWID"] = lic_mod.hwid()
+        env["SF_LIC_URL"] = lic.url
     proc = subprocess.Popen(cmd, cwd=P.game, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL, creationflags=NOWIN)
+                            stderr=subprocess.DEVNULL, creationflags=NOWIN, env=env)
     if revealed:
         def _rehide():
             # ждём, пока JVM точно прогрузит классы мода, и убираем файл из mods

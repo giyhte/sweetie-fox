@@ -131,6 +131,8 @@ class Lic:
             return "ok", ""
         except LicenseError as e:
             self.logout()
+            if e.code == "banned":
+                return "banned", str(e)
             return ("expired" if e.code == "expired" else "none"), str(e)
         except NetError as e:
             if self.valid() and time.time() - self.d.get("last_ok", 0) < OFFLINE_GRACE:

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-import os, threading
+import os, threading, time
 from PIL import Image, ImageChops
 from .common import *
 from . import engine, updater
@@ -33,9 +33,11 @@ class LauncherScene(Scene):
         self._alive = True
         self.cfg = load_cfg(P)
         self.busy, self.prog = False, 0.0
+        self.t0, self.eta, self.guess = None, None, 240.0
         self.proc = None
         self.launch_pending = False
         self.launch_cancel = False
+        self.game_running = False
         engine.hide_own_mod(P)  # подчистить, если осталось с прошлого запуска
         self.st = engine.state(P)
         self.nav = "home"
@@ -74,7 +76,8 @@ class LauncherScene(Scene):
         self.text("ver", 282, 294, "Minecraft " + MC_VERSION, 17, True, "#ffffff")
         self.text("verst", 282, 318, "", 12, False, SUB)
         self.button("b_main", (580, 278, 848, 344), "", self.on_main, "primary", 22, lambda: not self.busy)
-        self.text("status", 236, 354, "", 12, False, SUB, width=612)
+        self.text("status", 236, 354, "", 12, False, SUB, width=440)
+        self.text("pinfo", 848, 354, "", 12, True, "#ffffff", "ne")
         self.bar((236, 374, 848, 382), lambda: self.prog)
         self.text("nh", 258, 408, "Последние новости", 17, True, "#ffffff")
         self.text("n1", 258, 448, "Добро пожаловать в sweetie fox!", 16, True, "#ffffff")
@@ -155,13 +158,13 @@ class LauncherScene(Scene):
         if not found:
             return
         tag, url = found
-        post(lambda: (setattr(self, "busy", True), self.set_text("b_main", "ОБНОВЛЕНИЕ…"),
+        post(lambda: (setattr(self, "busy", True), self._prog_start(60.0), self.set_text("b_main", "ОБНОВЛЕНИЕ…"),
                       self.set_text("status", f"Найдена версия {tag} — обновляю лаунчер…"), self.refresh()))
         try:
             updater.apply(url, lambda f: post(lambda: self._progress(f)))
         except Exception as e:
             err = f"Обновление не удалось: {e}"
-            post(lambda: (setattr(self, "busy", False), self.refresh_state(),
+            post(lambda: (setattr(self, "busy", False), self.set_text("pinfo", ""), self.refresh_state(),
                           self.set_text("status", err)))
 
     # --- состояние ---
@@ -189,7 +192,7 @@ class LauncherScene(Scene):
         names = sorted(f[:-4] for f in os.listdir(self.P.mods) if f.endswith(".jar")) if os.path.isdir(self.P.mods) else []
         self.set_text("modlist", ("Установлено: %d\n\n" % len(names)) + "\n".join("• " + n for n in names[:14])
                       if names else "Модов пока нет — нажми «УСТАНОВИТЬ» на главной.")
-        if not self.launch_pending:
+        if not self.launch_pending and not self.game_running:
             self.set_text("b_main", ("ОБНОВИТЬ МЕНЮ" if self.st["menu"] else "УСТАНОВИТЬ МЕНЮ") if need_menu else ("▶  ИГРАТЬ" if self.st["game"] else "УСТАНОВИТЬ"))
         self.refresh()
 
@@ -233,6 +236,7 @@ class LauncherScene(Scene):
         self.host.root.after(15 * 1000, self._lic_recheck)
 
     def _kill_game(self):
+        self.game_running = False
         if self.proc:
             try:
                 self.proc.terminate()
@@ -242,7 +246,7 @@ class LauncherScene(Scene):
 
     def _kick_banned(self):
         self._kill_game()
-        self._gate("Вы получили блокировку", "login")
+        self._gate("Вы получили блокировку", "banned")
 
     def _kick_session(self, msg):
         self._kill_game()
@@ -266,6 +270,8 @@ class LauncherScene(Scene):
     def on_main(self):
         if self.launch_pending:
             return self.cancel_launch()
+        if self.game_running:
+            return self.stop_game()
         if self.lic and not self.lic.valid():
             return self._gate("Нужна действующая лицензия", "ext")
         if self.busy:
@@ -279,7 +285,7 @@ class LauncherScene(Scene):
 
     def start_launch(self):
         self.save()
-        self.launch_pending, self.launch_cancel, self.proc = True, False, None
+        self.launch_pending, self.launch_cancel, self.proc, self.game_running = True, False, None, False
         self.set_text("b_main", "ОТМЕНА ЗАПУСКА")
         self.set_text("status", "Подготовка запуска… можно нажать ещё раз, чтобы отменить")
         self.refresh()
@@ -287,7 +293,7 @@ class LauncherScene(Scene):
 
         def work():
             try:
-                proc = engine.launch(self.P, self.cfg)
+                proc = engine.launch(self.P, self.cfg, self.lic)
             except Exception as e:
                 err = str(e)
                 return post(lambda: self._launch_failed(err))
@@ -302,10 +308,38 @@ class LauncherScene(Scene):
                 pass
             self.set_text("status", "Запуск отменён")
             engine.hide_own_mod(self.P)
-        else:
-            self.proc = proc
-            self.set_text("status", "Игра запускается — окно появится через несколько секунд")
+            self.launch_pending = False
+            self.refresh_state()
+            return
+        self.proc = proc
+        self.game_running = True
         self.launch_pending = False
+        self.set_text("b_main", "ЗАКРЫТЬ ИГРУ")
+        self.set_text("status", "Игра запускается — окно появится через несколько секунд "
+                                 "(можно нажать «Закрыть игру», чтобы остановить)")
+        self.refresh()
+        self._game_poll()
+
+    def _game_poll(self):
+        if not self._alive or not self.game_running:
+            return
+        if self.proc is None or self.proc.poll() is not None:
+            # процесс сам завершился (игрок вышел/вылет) — не трогаем мод, его уже убирает engine.launch
+            self.proc, self.game_running = None, False
+            self.set_text("status", "Игра закрыта")
+            self.refresh_state()
+            return
+        self.host.root.after(1000, self._game_poll)
+
+    def stop_game(self):
+        self.game_running = False
+        if self.proc:
+            try:
+                self.proc.terminate()
+            except Exception:
+                pass
+            self.proc = None
+        self.set_text("status", "Игра закрыта")
         self.refresh_state()
 
     def _launch_failed(self, msg):
@@ -330,6 +364,7 @@ class LauncherScene(Scene):
             return
         self.save()
         self.busy, self.prog = True, 0.0
+        self._prog_start()
         self.set_text("b_main", "УСТАНОВКА…")
         self.go("home")
         post = self.host.post
@@ -349,12 +384,34 @@ class LauncherScene(Scene):
             post(self._done)
         threading.Thread(target=work, daemon=True).start()
 
+    def _prog_start(self, guess=240.0):
+        self.t0, self.eta, self.prog, self.guess = time.time(), None, 0.0, guess
+        self._progress(0.0)
+
+    @staticmethod
+    def _fmt_eta(sec):
+        m = int(round(sec / 60.0))
+        return "<1 мин" if m < 1 else f"~{m} мин"
+
     def _progress(self, f):
         self.prog = f
+        if self.t0 is None:
+            self.t0, self.guess = time.time(), 240.0
+        el = time.time() - self.t0
+        if f >= 0.995:
+            self.set_text("pinfo", "100%")
+        else:
+            w = min(1.0, f / 0.15)                       # чем дальше, тем больше верим измерению
+            total = (1 - w) * self.guess + w * (el / f if f > 0 else self.guess)
+            raw = total * (1 - f)
+            self.eta = raw if self.eta is None else self.eta * 0.85 + raw * 0.15
+            self.set_text("pinfo", f"{int(f * 100)}% • {self._fmt_eta(self.eta)}")
         self.refresh()
 
     def _done(self):
         self.busy, self.prog = False, 1.0
+        self.t0, self.eta = None, None
+        self.set_text("pinfo", "")
         self.refresh_state()
 
 

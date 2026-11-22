@@ -37,6 +37,7 @@ public final class PulseHud {
         Minecraft mc = Minecraft.getInstance();
         PulseConfig c = PulseConfig.get();
         if (mc.player == null || mc.options.hideGui) return;
+        if (!PulseLicense.pending() && !PulseLicense.valid()) return;
         try {
             PulseEvents.render(g, mc);
         } catch (Throwable t) { /* HUD не должен ронять игру */ }

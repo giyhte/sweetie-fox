@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Экран «Добро пожаловать»: анимация, вход / регистрация по ключу / продление."""
-import re, threading
+import re, threading, webbrowser
 from PIL import Image, ImageChops
 from .ui import Scene
 from .license import LicenseError, NetError
@@ -8,6 +8,7 @@ from .license import LicenseError, NetError
 SUB, DIM = "#c4bff0", "#9a94d0"
 BAD, GOOD = "#fb7185", "#86efac"
 BG = (36, 26, 100)
+TELEGRAM_URL = "https://t.me/sweetielauncher"
 
 
 def _hex(c):
@@ -51,12 +52,14 @@ class GateScene(Scene):
             self.c.itemconfig(it, fill=_hex(BG))
 
         # ---------- формы ----------
+        tg_img, tg_hv = pt.telegram_icon(34), pt.telegram_icon(34, hover=True)
         for pg, title in self.PAGES:
             self.tag = pg
             self.under.append((pg, lambda ov: pt.glass(ov, (240, 108, 640, 556), 28, 105, 16)))
             self.under.append((pg, lambda ov: pt.image(ov, ic, (412, 122))))
             self.text("tt_" + pg, 440, 184, {"login": "С возвращением!", "reg": "Создай аккаунт", "ext": "Продление лицензии"}[pg],
                       24, True, "#ffffff", "n")
+            self.imgbtn((588, 116, 622, 150), tg_img, tg_hv, lambda: webbrowser.open(TELEGRAM_URL))
             for i, (p2, t2) in enumerate(self.PAGES):
                 x0 = 262 + i * 120
                 self.button(f"tab_{pg}_{p2}", (x0, 224, x0 + 112, 256), t2, (lambda p2=p2: self.show(p2)), "nav", 13,
@@ -76,6 +79,16 @@ class GateScene(Scene):
             self.button("go_" + pg, (266, 440, 614, 484) if pg == "login" else (266, 498, 614, 542),
                         {"login": "Войти", "reg": "Зарегистрироваться", "ext": "Продлить и войти"}[pg], self.submit,
                         "primary", 15, lambda: not self.busy)
+        # ---------- блокировка ----------
+        self.tag = "banned"
+        self.under.append(("banned", lambda ov: pt.glass(ov, (240, 160, 640, 460), 28, 105, 16)))
+        self.text("ban_t", 440, 210, "Вы заблокированы", 26, True, "#ffffff", "n")
+        self.text("ban_m", 440, 254, "", 14, False, SUB, "n", width=340)
+        self.button("ban_tg", (300, 330, 580, 378), "✈  Обжаловать в Telegram",
+                    lambda: webbrowser.open(TELEGRAM_URL), "primary", 15)
+        self.text("ban_u", 440, 400, TELEGRAM_URL, 12, False, DIM, "n")
+        self.button("ban_out", (300, 414, 580, 450), "Выйти из аккаунта", self._ban_logout, "ghost", 13)
+
         self.tag = None
         self.set_page("welcome")
         self._anim(0)
@@ -119,6 +132,8 @@ class GateScene(Scene):
         st, msg = self.check_res
         if st == "ok":
             self.on_ok()
+        elif st == "banned":
+            self.show_banned(msg)
         else:
             self.show("ext" if st == "expired" else self.mode)
             self._status(self.mode, msg or self.note, BAD if (msg or self.note) else SUB)
@@ -126,11 +141,22 @@ class GateScene(Scene):
     def show(self, mode):
         self.mode = mode
         self.set_page(mode)
+        if mode not in self.F:
+            return
         first = self.F[mode]["u"] if not self.F[mode]["u"].get() else self.F[mode]["p"]
         try:
             first.focus_set()
         except Exception:
             pass
+
+    def show_banned(self, msg=""):
+        self.mode = "banned"
+        self.set_text("ban_m", msg or "Доступ к аккаунту ограничен.")
+        self.show("banned")
+
+    def _ban_logout(self):
+        self.lic.logout()
+        self.show("login")
 
     def _status(self, pg, text, col=SUB):
         self.set_text("st_" + pg, text, col)
@@ -171,6 +197,8 @@ class GateScene(Scene):
 
     def _fail(self, msg, code):
         self.busy = False
+        if code == "banned":
+            return self.show_banned(msg)
         if code == "expired" and self.mode == "login":
             self.F["ext"]["u"].delete(0, "end")
             self.F["ext"]["u"].insert(0, self.F["login"]["u"].get())

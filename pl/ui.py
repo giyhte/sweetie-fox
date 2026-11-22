@@ -31,6 +31,7 @@ class Painter:
         self.mw = 28
         self.mh = max(6, int(28 * h / w))
         self._m, self._g, self._glow, self._logo, self._sheen = {}, {}, {}, {}, {}
+        self._tg = {}
 
     # ----- фон -----
     def mesh(self, t):
@@ -246,6 +247,28 @@ class Painter:
 
     def image(self, ov, img, xy):
         self._comp(ov, img, xy[0], xy[1])
+
+    def telegram_icon(self, s=36, hover=False):
+        """Кружок-иконка Telegram (стилизованно) для кнопок-ссылок."""
+        key = (s, hover)
+        if key not in self._tg:
+            im = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+            d = ImageDraw.Draw(im)
+            if hover:
+                d.ellipse((0, 0, s, s), fill=(255, 255, 255, 60))
+            else:
+                g = self.grad(s, s, (42, 150, 220), (90, 200, 245)).convert("RGBA")
+                g.putalpha(self.mask(s, s, s // 2))
+                im.alpha_composite(g)
+                w = max(1, int(s * 0.05))
+                d = ImageDraw.Draw(im)
+                c = (255, 255, 255, 235)
+                d.line([(s * 0.18, s * 0.52), (s * 0.84, s * 0.22)], fill=c, width=w)
+                d.line([(s * 0.84, s * 0.22), (s * 0.60, s * 0.80)], fill=c, width=w)
+                d.line([(s * 0.46, s * 0.50), (s * 0.60, s * 0.80)], fill=c, width=w)
+                d.line([(s * 0.18, s * 0.52), (s * 0.46, s * 0.50)], fill=c, width=w)
+            self._tg[key] = im
+        return self._tg[key]
 
     def icon(self, s=64):
         try:

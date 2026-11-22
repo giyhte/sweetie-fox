@@ -266,6 +266,9 @@ def make_sounds():
 
 def write_sounds():
     S = make_sounds()
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from gen_sounds_anime import make_anime_sounds
+    S.update(make_anime_sounds())   # мягкие анимешные звуки вместо старых
     d = out(PL, "sounds", "x")
     d = os.path.dirname(d)
     from scipy.io import wavfile

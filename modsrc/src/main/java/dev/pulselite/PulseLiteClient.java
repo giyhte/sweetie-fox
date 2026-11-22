@@ -22,6 +22,7 @@ public class PulseLiteClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         PulseConfig.load();
+        PulseLicense.init();
         KeyMapping.Category cat = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(ID, "main"));
         OPEN_MENU = KeyBindingHelper.registerKeyBinding(
                 new KeyMapping("key.pulselite.menu", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_SHIFT, cat));
@@ -53,6 +54,10 @@ public class PulseLiteClient implements ClientModInitializer {
     }
 
     private static void tick(Minecraft mc) {
+        if (!PulseLicense.pending() && !PulseLicense.valid()) {
+            while (OPEN_MENU.consumeClick()) {}  // не даём накопиться кликам, пока лицензия недействительна
+            return;
+        }
         try {
             PulseBoost.tick(mc);
         } catch (Throwable t) { System.err.println("[PulseLite] boost tick: " + t); }
