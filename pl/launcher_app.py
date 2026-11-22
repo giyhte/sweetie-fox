@@ -4,6 +4,8 @@ from PIL import Image, ImageEnhance, ImageChops
 from .common import *
 from . import engine, updater
 from .ui import Host, Scene
+from . import license as lic_mod
+from .license_ui import GateScene
 
 W, H = 880, 620
 SUB = "#c4bff0"
@@ -26,9 +28,11 @@ def cover(im, w, h):
 
 
 class LauncherScene(Scene):
-    def __init__(self, host, P):
+    def __init__(self, host, P, lic=None):
         super().__init__(host)
         self.P = P
+        self.lic = lic
+        self._alive = True
         self.cfg = load_cfg(P)
         self.busy, self.prog = False, 0.0
         self.st = engine.state(P)
@@ -53,6 +57,10 @@ class LauncherScene(Scene):
         self.under.append(lambda ov: pt.image(ov, fox, (68, 456)))
         self.text("brand", 108, 38, "sweetie fox", 28, True, "#ffffff")
         self.text("welcome", 110, 76, "Добро пожаловать!", 14, False, SUB)
+        if lic:
+            self.text("lic_user", 848, 32, "", 14, True, "#ffffff", "ne")
+            self.text("lic_left", 848, 54, "", 13, False, SUB, "ne")
+            self.button("b_logout", (768, 80, 848, 104), "Выйти", self._logout, "ghost", 12)
         for i, k in enumerate(PAGES):
             part = navimg.crop((0, int(round(i * bh)), nw, int(round((i + 1) * bh))))
             part = part.resize((160, int(part.height * 160 / nw)), Image.LANCZOS)
@@ -81,7 +89,7 @@ class LauncherScene(Scene):
         self.text("vv1", 262, 190, "Minecraft " + MC_VERSION + "  •  Fabric", 20, True, "#ffffff")
         self.text("vv2", 262, 226, "Поддерживается одна версия — под неё подобраны моды на FPS\n"
                   "(Sodium, Lithium, FerriteCore и др.) и меню Sweetie Fox.", 14, False, SUB, width=560)
-        self.button("b_inst", (262, 330, 540, 376), "Переустановить / обновить", self.on_install, "ghost", 14,
+        self.button("b_inst", (262, 330, 540, 376), "Переустановить / обновить", lambda: self.on_install(force=True), "ghost", 14,
                     lambda: not self.busy)
 
         # ---- Настройки ----
@@ -133,6 +141,9 @@ class LauncherScene(Scene):
         self.set_page("home")
         updater.cleanup()
         threading.Thread(target=self._update_check, daemon=True).start()
+        if lic:
+            self._lic_tick()
+            self._lic_recheck()
 
     def card(self, page, title):
         self.tag = page
@@ -189,7 +200,51 @@ class LauncherScene(Scene):
         save_cfg(self.P, self.cfg)
 
     # --- действия ---
+    # --- лицензия ---
+    def _lic_tick(self):
+        if not self._alive:
+            return
+        l = self.lic.left()
+        self.set_text("lic_user", self.lic.username)
+        col = SUB if (l is None or l > 3 * 86400) else ("#fbbf24" if l > 86400 else "#fb7185")
+        self.set_text("lic_left", "Лицензия: " + lic_mod.fmt_left(l), col)
+        if l is not None and l <= 0:
+            return self._gate("Срок лицензии истёк — продли её новым ключом", "ext")
+        self.host.root.after(1000, self._lic_tick)
+
+    def _lic_recheck(self):
+        if not self._alive:
+            return
+
+        def work():
+            try:
+                self.lic.check()
+            except lic_mod.LicenseError as e:
+                msg, code = str(e), e.code
+                self.host.post(lambda: self._gate(msg, "ext" if code == "expired" else "login"))
+            except Exception:
+                pass
+        threading.Thread(target=work, daemon=True).start()
+        self.host.root.after(10 * 60 * 1000, self._lic_recheck)
+
+    def _gate(self, note="", mode="login"):
+        if not self._alive:
+            return
+        if mode != "ext":
+            self.lic.logout()
+        show_gate(self.host, self.P, self.lic, note, mode)
+
+    def _logout(self):
+        self.lic.logout()
+        show_gate(self.host, self.P, self.lic, "Ты вышел из аккаунта", "login")
+
+    def destroy(self):
+        self._alive = False
+        super().destroy()
+
     def on_main(self):
+        if self.lic and not self.lic.valid():
+            return self._gate("Нужна действующая лицензия", "ext")
         if self.busy:
             return
         if self.st["game"] and self.cfg["own_mod"] and (not self.st["menu"] or self.st["menu_old"]):
@@ -204,7 +259,7 @@ class LauncherScene(Scene):
         else:
             self.on_install()
 
-    def on_install(self, menu_only=False):
+    def on_install(self, menu_only=False, force=False):
         if self.busy:
             return
         self.save()
@@ -222,7 +277,7 @@ class LauncherScene(Scene):
                     ctx.step(0.0, 1.0)
                     engine.ensure_menu_mod(self.P, ctx)
                 else:
-                    engine.install_all(self.P, self.cfg, ctx)
+                    engine.install_all(self.P, self.cfg, ctx, force)
             except Exception as e:
                 ctx.log(f"ОШИБКА: {e}")
             post(self._done)
@@ -237,8 +292,17 @@ class LauncherScene(Scene):
         self.refresh_state()
 
 
+def show_launcher(host, P, lic):
+    host.set_scene(LauncherScene(host, P, lic))
+
+
+def show_gate(host, P, lic, note="", mode="login"):
+    host.set_scene(GateScene(host, lic, lambda: show_launcher(host, P, lic), note, mode))
+
+
 def main(root):
     P = Paths(root)
     host = Host("Sweetie Fox Launcher", W, H)
-    host.set_scene(LauncherScene(host, P))
+    lic = lic_mod.Lic(root)
+    show_gate(host, P, lic)
     host.run()

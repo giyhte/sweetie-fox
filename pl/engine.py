@@ -19,6 +19,45 @@ def find_version(P):
     return c[0] if c else None
 
 
+def prebuilt():
+    """Готовый jar меню, вшитый в exe (собирается на GitHub). -> (путь, хэш) или None."""
+    d = os.path.join(RES, "modjar")
+    j, h = os.path.join(d, OWN_JAR), os.path.join(d, "mod.hash")
+    try:
+        if os.path.exists(j) and os.path.exists(h):
+            return j, open(h).read().strip()
+    except Exception:
+        pass
+    return None
+
+
+_HC = {}
+
+
+def want_hash(P):
+    pb = prebuilt()
+    if pb:
+        return pb[1]
+    if os.path.isdir(P.modsrc):
+        if "h" not in _HC:
+            _HC["h"] = tree_hash(P.modsrc)
+        return _HC["h"]
+    return None
+
+
+def game_ok(P):
+    """Игра целиком на месте — переустанавливать не нужно."""
+    v = find_version(P)
+    if not v:
+        return False
+    vd = os.path.join(P.game, "versions")
+    ok = os.path.exists(os.path.join(vd, MC_VERSION, MC_VERSION + ".jar"))
+    for d in ("libraries", os.path.join("assets", "indexes"), os.path.join("assets", "objects")):
+        p = os.path.join(P.game, d)
+        ok = ok and os.path.isdir(p) and bool(os.listdir(p))
+    return ok
+
+
 def state(P):
     n = 0
     if os.path.isdir(P.mods):
@@ -27,8 +66,9 @@ def state(P):
     old = False
     try:
         hf = os.path.join(P.bundle, "mod.hash")
-        if menu and os.path.isdir(P.modsrc):
-            old = not os.path.exists(hf) or open(hf).read().strip() != tree_hash(P.modsrc)
+        w = want_hash(P)
+        if menu and w is not None:
+            old = not os.path.exists(hf) or open(hf).read().strip() != w
     except Exception:
         pass
     return {"game": find_version(P) is not None, "mods": n, "menu": menu, "menu_old": old}
@@ -63,7 +103,11 @@ def write_options(P, low):
 
 
 # ---------- игра ----------
-def install_game(P, ctx):
+def install_game(P, ctx, force=False):
+    if not force and game_ok(P):
+        ctx.log("Игра уже установлена — пропускаю загрузку ✓")
+        ctx.frac(1)
+        return
     import minecraft_launcher_lib as mll
     os.makedirs(P.game, exist_ok=True)
     mx = [1]
@@ -165,45 +209,71 @@ def build_mod(P, ctx):
         _unzip(z, gradle, ctx, "Распаковка Gradle…")
 
     work = os.path.join(P.tools, "build")
-    shutil.rmtree(work, ignore_errors=True)
-    shutil.copytree(P.modsrc, work, ignore=shutil.ignore_patterns("build", ".gradle"))
-    # актуальные версии зависимостей
+    os.makedirs(work, exist_ok=True)
+    # обновляем только исходники; .gradle и build остаются (кэш → повторная сборка в разы быстрее)
+    shutil.rmtree(os.path.join(work, "src"), ignore_errors=True)
+    shutil.copytree(os.path.join(P.modsrc, "src"), os.path.join(work, "src"))
+    for fn in os.listdir(P.modsrc):
+        if os.path.isfile(os.path.join(P.modsrc, fn)):
+            shutil.copy2(os.path.join(P.modsrc, fn), os.path.join(work, fn))
+    import json as _j
+    stf = os.path.join(P.tools, "build_state.json")
     try:
-        loader = mll.fabric.get_latest_loader_version()
+        bs = _j.load(open(stf))
     except Exception:
-        loader = "0.18.4"
-    fabric_api = "0.141.1+1.21.11"
-    try:
-        q = urllib.parse.urlencode({"loaders": json_s(["fabric"]), "game_versions": json_s([MC_VERSION])})
-        fabric_api = http_json(f"https://api.modrinth.com/v2/project/fabric-api/version?{q}")[0]["version_number"]
-    except Exception:
-        pass
+        bs = {}
+    loader, fabric_api = bs.get("loader"), bs.get("fabric_api")
+    if not (loader and fabric_api):
+        try:
+            loader = mll.fabric.get_latest_loader_version()
+        except Exception:
+            loader = "0.18.4"
+        fabric_api = "0.141.1+1.21.11"
+        try:
+            q = urllib.parse.urlencode({"loaders": json_s(["fabric"]), "game_versions": json_s([MC_VERSION])})
+            fabric_api = http_json(f"https://api.modrinth.com/v2/project/fabric-api/version?{q}")[0]["version_number"]
+        except Exception:
+            pass
     with open(os.path.join(work, "gradle.properties"), "w", encoding="utf-8") as f:
-        f.write("org.gradle.jvmargs=-Xmx1536M\n"
+        f.write("org.gradle.jvmargs=-Xmx1536M\norg.gradle.caching=true\norg.gradle.parallel=true\n"
                 f"minecraft_version={MC_VERSION}\nloader_version={loader}\nfabric_version={fabric_api}\n"
                 "loom_version=1.14-SNAPSHOT\nmod_version=1.0.0\n")
 
-    ctx.log("Собираю Sweetie Fox Menu (первый раз 3–6 минут)…")
+    warm = os.path.exists(stf) and os.path.isdir(os.path.join(P.tools, "gradle-home", "caches"))
+    ctx.log("Обновляю Sweetie Fox Menu (быстро, кэш)…" if warm else "Собираю Sweetie Fox Menu (первый раз 3–6 минут)…")
     env = dict(os.environ)
     env["JAVA_HOME"] = jdk
     env["GRADLE_USER_HOME"] = os.path.join(P.tools, "gradle-home")
     env["PATH"] = os.path.join(jdk, "bin") + os.pathsep + env.get("PATH", "")
     logf = os.path.join(P.tools, "build.log")
-    cmd = [os.path.join(gradle, "bin", "gradle.bat"), "build", "--no-daemon", "--console=plain"]
-    n = 0
-    with open(logf, "w", encoding="utf-8", errors="replace") as lf:
-        p = subprocess.Popen(cmd, cwd=work, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                             text=True, encoding="utf-8", errors="replace", **hidden())
-        for line in p.stdout:
-            lf.write(line)
-            n += 1
-            line = line.strip()
-            if line:
-                ctx.status(line[:90])
-            ctx.frac(0.4 + min(0.55, n / 700))
-        p.wait()
-    if p.returncode != 0:
+
+    def run(extra):
+        cmd = [os.path.join(gradle, "bin", "gradle.bat"), "build", "--no-daemon", "--console=plain"] + extra
+        n = 0
+        with open(logf, "a", encoding="utf-8", errors="replace") as lf:
+            lf.write("\n=== " + " ".join(extra) + " ===\n")
+            p = subprocess.Popen(cmd, cwd=work, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                 text=True, encoding="utf-8", errors="replace", **hidden())
+            for line in p.stdout:
+                lf.write(line)
+                n += 1
+                line = line.strip()
+                if line:
+                    ctx.status(line[:90])
+                ctx.frac(0.4 + min(0.55, n / (200 if warm else 700)))
+            p.wait()
+        return p.returncode
+
+    open(logf, "w").close()
+    rc = run(["--offline"]) if warm else 1
+    if rc != 0:
+        rc = run([])
+    if rc != 0:
         raise RuntimeError("Сборка не удалась. Лог: tools\\build.log")
+    try:
+        _j.dump({"loader": loader, "fabric_api": fabric_api}, open(stf, "w"))
+    except Exception:
+        pass
     libs = os.path.join(work, "build", "libs")
     jars = [x for x in os.listdir(libs) if x.endswith(".jar") and "sources" not in x and "dev" not in x]
     if not jars:
@@ -212,7 +282,7 @@ def build_mod(P, ctx):
     out = os.path.join(P.bundle, OWN_JAR)
     shutil.copy2(os.path.join(libs, jars[0]), out)
     with open(os.path.join(P.bundle, "mod.hash"), "w") as f:
-        f.write(tree_hash(P.modsrc))
+        f.write(want_hash(P) or tree_hash(P.modsrc))
     ctx.frac(1)
     return out
 
@@ -220,30 +290,41 @@ def build_mod(P, ctx):
 def ensure_menu_mod(P, ctx, allow_build=True):
     jar = os.path.join(P.bundle, OWN_JAR)
     hf = os.path.join(P.bundle, "mod.hash")
-    if not os.path.isdir(P.modsrc) and not os.path.exists(jar):
-        ctx.log("Папки modsrc нет — Sweetie Fox Menu пропущен (см. README)")
+    want, pb = want_hash(P), prebuilt()
+    if want is None and not os.path.exists(jar):
+        ctx.log("Меню не найдено (нет готовой сборки и папки modsrc) — пропущено")
         return False
-    fresh = False
-    if os.path.exists(jar) and os.path.exists(hf):
+    have = ""
+    if os.path.exists(hf):
         with open(hf) as f:
-            fresh = (not os.path.isdir(P.modsrc)) or f.read().strip() == tree_hash(P.modsrc)
+            have = f.read().strip()
+    fresh = os.path.exists(jar) and (want is None or have == want)
     if not fresh:
-        if not allow_build:
-            return False
-        try:
-            jar = build_mod(P, ctx)
-        except Exception as e:
-            ctx.log(f"! Sweetie Fox Menu не собран: {e}")
-            return False
+        if pb:
+            os.makedirs(P.bundle, exist_ok=True)
+            shutil.copy2(pb[0], jar)
+            with open(hf, "w") as f:
+                f.write(want)
+            ctx.log("Меню обновлено — готовая сборка, без пересборки ✓")
+        else:
+            if not allow_build:
+                return False
+            try:
+                jar = build_mod(P, ctx)
+            except Exception as e:
+                ctx.log(f"! Sweetie Fox Menu не собран: {e}")
+                return False
+    else:
+        ctx.log("Меню актуально ✓")
     os.makedirs(P.mods, exist_ok=True)
     shutil.copy2(jar, os.path.join(P.mods, OWN_JAR))
     ctx.log("Sweetie Fox Menu установлен — в игре жми Right Shift")
     return True
 
 
-def install_all(P, cfg, ctx):
+def install_all(P, cfg, ctx, force=False):
     own = cfg.get("own_mod", True)
-    ctx.step(0.0, 0.35 if own else 0.7); install_game(P, ctx)
+    ctx.step(0.0, 0.35 if own else 0.7); install_game(P, ctx, force)
     ctx.step(0.35 if own else 0.7, 0.45 if own else 0.95); download_mods(P, ctx)
     write_options(P, cfg.get("low_mode", True))
     if own:
