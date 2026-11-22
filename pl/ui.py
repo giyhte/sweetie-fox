@@ -3,7 +3,7 @@
 import math, os, time, queue, traceback
 from PIL import Image, ImageDraw, ImageFilter, ImageChops, ImageFont
 
-VIOLET, PINK, CYAN, BLUE = (139, 92, 246), (192, 132, 252), (186, 200, 255), (99, 102, 241)
+VIOLET, PINK, CYAN, BLUE = (104, 66, 240), (170, 130, 255), (150, 118, 255), (80, 70, 220)
 
 BLOBS = [  # cx, cy, ax, ay, fx, fy, phase, radius, color, gain
     (0.12, 0.18, 0.10, 0.08, 0.21, 0.17, 0.0, 0.36, VIOLET, 1.00),
@@ -11,7 +11,7 @@ BLOBS = [  # cx, cy, ax, ay, fx, fy, phase, radius, color, gain
     (0.62, 0.95, 0.14, 0.06, 0.19, 0.13, 3.1, 0.40, CYAN, 0.70),
     (0.08, 0.88, 0.07, 0.09, 0.15, 0.25, 4.4, 0.30, BLUE, 0.85),
 ]
-BASE = (12, 9, 36)
+BASE = (8, 6, 22)
 FONTS = ["C:/Windows/Fonts/segoeuib.ttf", "C:/Windows/Fonts/arialbd.ttf",
          "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "/System/Library/Fonts/Helvetica.ttc"]
 
@@ -167,15 +167,36 @@ class Painter:
         base = 30 + int(26 * hv)
         if accent and enabled:
             self.glow(ov, box, VIOLET if hv < 0.5 else (170, 140, 255), r)
-            c1 = tuple(int(a + (b - a) * hv * 0.35) for a, b in zip((70, 50, 150), VIOLET))
-            c2 = tuple(int(a + (b - a) * hv * 0.35) for a, b in zip((60, 44, 130), CYAN))
+            c1 = tuple(int(a + (b - a) * hv * 0.35) for a, b in zip((70, 44, 190), VIOLET))
+            c2 = tuple(int(a + (b - a) * hv * 0.35) for a, b in zip((118, 90, 250), CYAN))
             self._grad_fill(ov, box, c1, c2, r, False)
-            self._fill(ov, box, (255, 255, 255, int(10 + 28 * hv)), self.mask(w, h, r))
+            self._fill(ov, box, (255, 255, 255, int(8 + 26 * hv)), self.mask(w, h, r))
+            if w > 120:
+                self.stripes(ov, box, r)
         else:
             self._fill(ov, box, (255, 255, 255, base if enabled else 16), self.mask(w, h, r))
         border = 48 + int(40 * hv) if enabled else 30
         self._fill(ov, box, (255, 255, 255, border), self.mask(w, h, r, 1))
         self.sheen(ov, box, r, int(30 + 35 * hv) if enabled else 14)
+
+    def stripes(self, ov, box, r):
+        """Две косые полосы справа, как на кнопках из макета."""
+        x0, y0, x1, y1 = box
+        w, h = x1 - x0, y1 - y0
+        key = ("st", w, h, r)
+        if key not in self._sheen:
+            S = 3
+            m = Image.new("L", (w * S, h * S), 0)
+            d = ImageDraw.Draw(m)
+            for off, wd in ((0, 7), (14, 3)):
+                xr = w - 26 - off
+                d.polygon([((xr + h * 0.45) * S, 0), ((xr + h * 0.45 + wd) * S, 0),
+                           ((xr - h * 0.45 + wd) * S, h * S), ((xr - h * 0.45) * S, h * S)], fill=70)
+            m = m.resize((w, h), Image.LANCZOS)
+            layer = Image.new("RGBA", (w, h), (255, 255, 255, 0))
+            layer.putalpha(ImageChops.multiply(m, self.mask(w, h, r)))
+            self._sheen[key] = layer
+        self._comp(ov, self._sheen[key], x0, y0)
 
     def switch(self, ov, box, on, hover=False):
         x0, y0, x1, y1 = box
@@ -233,15 +254,13 @@ class Painter:
 
     def background(self):
         if getattr(self, "_bg", None) is None:
-            try:
-                im = self.asset("scene.png").convert("RGB")
-                sc = max(self.w / im.width, self.h / im.height)
-                im = im.resize((int(im.width * sc) + 1, int(im.height * sc) + 1), Image.LANCZOS)
-                l, t = (im.width - self.w) // 2, (im.height - self.h) // 2
-                im = im.crop((l, t, l + self.w, t + self.h)).filter(ImageFilter.GaussianBlur(5))
-                im = Image.blend(im, Image.new("RGB", im.size, (22, 12, 64)), 0.45)
-            except Exception:
-                im = self.mesh(0)
+            sw, sh = 200, max(40, int(200 * self.h / self.w))
+            im = Image.new("RGB", (sw, sh), BASE)
+            d = ImageDraw.Draw(im)
+            d.ellipse((-60, -50, 90, 70), fill=(46, 24, 120))
+            d.ellipse((120, sh - 50, 270, sh + 70), fill=(36, 20, 100))
+            d.ellipse((70, sh // 2 - 20, 150, sh // 2 + 40), fill=(20, 12, 56))
+            im = im.filter(ImageFilter.GaussianBlur(26)).resize((self.w, self.h), Image.BILINEAR)
             self._bg = im
         return self._bg
 
@@ -249,26 +268,87 @@ class Painter:
         self._comp(ov, img, xy[0], xy[1])
 
     def telegram_icon(self, s=36, hover=False):
-        """Кружок-иконка Telegram (стилизованно) для кнопок-ссылок."""
-        key = (s, hover)
-        if key not in self._tg:
-            im = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-            d = ImageDraw.Draw(im)
-            if hover:
-                d.ellipse((0, 0, s, s), fill=(255, 255, 255, 60))
-            else:
-                g = self.grad(s, s, (42, 150, 220), (90, 200, 245)).convert("RGBA")
-                g.putalpha(self.mask(s, s, s // 2))
-                im.alpha_composite(g)
-                w = max(1, int(s * 0.05))
-                d = ImageDraw.Draw(im)
-                c = (255, 255, 255, 235)
-                d.line([(s * 0.18, s * 0.52), (s * 0.84, s * 0.22)], fill=c, width=w)
-                d.line([(s * 0.84, s * 0.22), (s * 0.60, s * 0.80)], fill=c, width=w)
-                d.line([(s * 0.46, s * 0.50), (s * 0.60, s * 0.80)], fill=c, width=w)
-                d.line([(s * 0.18, s * 0.52), (s * 0.46, s * 0.50)], fill=c, width=w)
-            self._tg[key] = im
-        return self._tg[key]
+        return self.glyph("plane", s, (255, 255, 255, 255) if hover else (176, 160, 255, 255))
+
+    def glyph(self, name, size, color=(255, 255, 255, 255)):
+        """Простые векторные иконки (24x24 сетка), рисуются маской и красятся в нужный цвет."""
+        key = ("gl", name, size, color)
+        if key in self._tg:
+            return self._tg[key]
+        S = 4
+        n = size * S
+        u = n / 24.0
+        m = Image.new("L", (n, n), 0)
+        d = ImageDraw.Draw(m)
+        P = lambda pts: [(x * u, y * u) for x, y in pts]
+        E = lambda a, b, c, e, f=255: d.ellipse((a * u, b * u, c * u, e * u), fill=f)
+        R = lambda a, b, c, e, r=0, f=255: d.rounded_rectangle((a * u, b * u, c * u, e * u), r * u, fill=f)
+        L = lambda pts, w=3: d.line(P(pts), fill=255, width=max(1, int(w * u)), joint="curve")
+        if name == "home":
+            d.polygon(P([(3, 12), (12, 3), (21, 12), (18, 12), (18, 21), (14, 21), (14, 14), (10, 14), (10, 21), (6, 21), (6, 12)]), fill=255)
+        elif name == "gear":
+            import math
+            for k in range(8):
+                a = k * math.pi / 4
+                c, sn = math.cos(a), math.sin(a)
+                pts = [(12 + c * dx - sn * dy, 12 + sn * dx + c * dy) for dx, dy in ((-2, -10), (2, -10), (2, 0), (-2, 0))]
+                d.polygon(P(pts), fill=255)
+            E(5, 5, 19, 19); E(9, 9, 15, 15, 0)
+        elif name == "user":
+            E(8, 3, 16, 11); E(4, 14, 20, 30)
+        elif name == "puzzle":
+            R(4, 8, 20, 21, 3); E(9, 3, 15, 9); E(17, 11, 23, 17)
+        elif name == "bolt":
+            d.polygon(P([(13, 2), (5, 13), (11, 13), (10, 22), (19, 10), (13, 10)]), fill=255)
+        elif name == "play":
+            d.polygon(P([(6, 3), (20, 12), (6, 21)]), fill=255)
+        elif name == "megaphone":
+            d.polygon(P([(3, 9), (8, 9), (18, 4), (18, 20), (8, 15), (3, 15)]), fill=255); R(8, 15, 11.5, 21, 1)
+        elif name == "clock":
+            E(3, 3, 21, 21); E(5, 5, 19, 19, 0); L([(12, 7), (12, 12), (16, 14)], 2)
+        elif name == "chev":
+            L([(6, 9), (12, 15), (18, 9)], 3)
+        elif name == "chevr":
+            L([(9, 5), (16, 12), (9, 19)], 3)
+        elif name == "arrow":
+            L([(3, 12), (20, 12)], 3); L([(14, 6), (20, 12), (14, 18)], 3)
+        elif name == "back":
+            L([(21, 12), (5, 12)], 3); L([(11, 6), (5, 12), (11, 18)], 3)
+        elif name == "download":
+            L([(12, 3), (12, 14)], 3); d.polygon(P([(6, 11), (18, 11), (12, 18)]), fill=255); R(4, 20, 20, 22.5, 1)
+        elif name == "exit":
+            R(3, 3, 13, 21, 2); R(5, 5, 13, 19, 0, 0); L([(10, 12), (20, 12)], 3); d.polygon(P([(17, 7), (23, 12), (17, 17)]), fill=255)
+        elif name == "check":
+            L([(5, 12.5), (10, 17), (19, 7)], 3.4)
+        elif name == "plane":
+            d.polygon(P([(2, 11), (22, 3), (19, 20), (12, 15), (9, 20), (9, 14)]), fill=255)
+            d.line(P([(9, 14), (17, 8)]), fill=0, width=max(1, int(1.2 * u)))
+        elif name == "lock":
+            R(5, 10, 19, 22, 3); d.arc((7.5 * u, 2 * u, 16.5 * u, 15 * u), 180, 360, fill=255, width=max(1, int(2.6 * u)))
+        elif name == "key":
+            E(3, 6, 13, 16); E(6, 9, 10, 13, 0); R(12, 10, 22, 12.6, 1); R(18, 12, 20.4, 16, 0.5)
+        elif name == "eye":
+            E(1.5, 6, 22.5, 18); E(7.5, 7.5, 16.5, 16.5, 0); E(9.5, 9.5, 14.5, 14.5)
+        elif name == "eyeoff":
+            E(1.5, 6, 22.5, 18); E(7.5, 7.5, 16.5, 16.5, 0); E(9.5, 9.5, 14.5, 14.5); L([(4, 21), (20, 3)], 2.6)
+        m = m.resize((size, size), Image.LANCZOS)
+        layer = Image.new("RGBA", (size, size), color)
+        layer.putalpha(ImageChops.multiply(m, Image.new("L", (size, size), color[3])))
+        self._tg[key] = layer
+        return layer
+
+    def gl(self, ov, name, cx, cy, size, color=(255, 255, 255, 255)):
+        self._comp(ov, self.glyph(name, size, color), int(cx - size / 2), int(cy - size / 2))
+
+    def checkbox(self, ov, box, on, hover=False):
+        x0, y0, x1, y1 = box
+        w, h = x1 - x0, y1 - y0
+        if on:
+            self._grad_fill(ov, box, VIOLET, CYAN, 5, hover)
+            self.gl(ov, "check", x0 + w / 2, y0 + h / 2, int(h * 0.8), (255, 255, 255, 255))
+        else:
+            self._fill(ov, box, (255, 255, 255, 30 if hover else 16), self.mask(w, h, 5))
+            self._fill(ov, box, (255, 255, 255, 80), self.mask(w, h, 5, 1))
 
     def icon(self, s=64):
         try:
@@ -360,13 +440,27 @@ class Scene:
     def bar(self, box, get):
         self.regions.append({"kind": "bar", "box": box, "get": get, "page": self.tag})
 
-    def dot(self, cx, cy, color_fn):
-        self.regions.append({"kind": "dot", "c": (cx, cy), "col": color_fn, "page": self.tag})
+    def dot(self, cx, cy, color_fn, r=5):
+        self.regions.append({"kind": "dot", "c": (cx, cy), "col": color_fn, "r": r, "page": self.tag})
 
     def imgbtn(self, box, img, hover, cb, sel=None):
         r = {"kind": "img", "box": box, "img": img, "hover": hover, "cb": cb, "sel": sel or (lambda: False),
              "style": "img", "en": lambda: True, "page": self.tag}
         self.regions.append(r)
+
+    def check(self, box, get, set_):
+        r = {"kind": "check", "box": box, "get": get, "set": set_, "page": self.tag}
+        self.regions.append(r)
+        return r
+
+    def link(self, box, cb):
+        r = {"kind": "link", "box": box, "cb": cb, "page": self.tag}
+        self.regions.append(r)
+        return r
+
+    def glyph(self, name, cx, cy, size, col=(255, 255, 255, 255)):
+        """col — кортеж RGBA или функция, возвращающая его (для состояний)."""
+        self.regions.append({"kind": "glyph", "name": name, "c": (cx, cy), "size": size, "col": col, "page": self.tag})
 
     def entry(self, box, text):
         e = self.host.entry(box, text)
@@ -405,7 +499,12 @@ class Scene:
             if k == "button":
                 en = r["en"]()
                 accent = r["style"] == "primary" or (r["style"] == "nav" and r["sel"]())
-                self.pt.glassbtn(ov, r["box"], hv, en, accent)
+                if r["style"] == "nav" and not accent:
+                    x0, y0, x1, y1 = r["box"]
+                    if hv > 0.02:
+                        self.pt._fill(ov, r["box"], (255, 255, 255, int(22 * hv)), self.pt.mask(x1 - x0, y1 - y0, 12))
+                else:
+                    self.pt.glassbtn(ov, r["box"], hv, en, accent)
             elif k == "switch":
                 self.pt.switch(ov, r["box"], r["get"](), hv)
             elif k == "slider":
@@ -413,7 +512,12 @@ class Scene:
             elif k == "bar":
                 self.pt.bar(ov, r["box"], r["get"]())
             elif k == "dot":
-                self.pt.dot(ov, r["c"][0], r["c"][1], r["col"]())
+                self.pt.dot(ov, r["c"][0], r["c"][1], r["col"](), r.get("r", 5))
+            elif k == "check":
+                self.pt.checkbox(ov, r["box"], r["get"](), r is self.hover)
+            elif k == "glyph":
+                col = r["col"]() if callable(r["col"]) else r["col"]
+                self.pt.gl(ov, r["name"], r["c"][0], r["c"][1], r["size"], col)
             elif k == "img":
                 b = r["box"]
                 self.pt.image(ov, r["img"], (b[0], b[1]))
@@ -471,8 +575,10 @@ class Scene:
         r = self._hit(x, y)
         if not r:
             return
-        if r["kind"] in ("button", "img"):
+        if r["kind"] in ("button", "img", "link"):
             r["cb"]()
+        elif r["kind"] == "check":
+            r["set"](not r["get"]())
         elif r["kind"] == "switch":
             r["set"](not r["get"]())
         elif r["kind"] == "slider":
@@ -510,7 +616,7 @@ class Host:
         self.S = round(max(1.0, min(sw * 0.80 / w, sh * 0.82 / h, 2.5)), 3)
         cw, ch = int(w * self.S), int(h * self.S)
         self.logic, self.entries, self._force, self._rs = {}, [], True, None
-        self.root.configure(bg="#09081c")
+        self.root.configure(bg="#08061a")
         self.root.minsize(w, h)
         self.root.geometry(f"{cw}x{ch}+{max(0, (sw-cw)//2)}+{max(0, (sh-ch)//3)}")
         try:
@@ -518,20 +624,20 @@ class Host:
         except Exception:
             pass
         self.painter = Painter(w, h)
-        self.canvas = tk.Canvas(self.root, width=cw, height=ch, highlightthickness=0, bd=0, bg="#09081c")
+        self.canvas = tk.Canvas(self.root, width=cw, height=ch, highlightthickness=0, bd=0, bg="#08061a")
         self.canvas.pack(expand=True)
         self.bg = self.canvas.create_image(0, 0, anchor="nw")
         import random
         self.rnd = random
         self.flakes = []
-        for i in range(34):
-            x, y, r = random.uniform(0, w), random.uniform(0, h), random.choice((1.5, 2, 2, 3))
-            it = self.canvas.create_oval(x - r, y - r, x + r, y + r, fill=random.choice(("#ffffff", "#e6e0ff", "#cfd8ff")), width=0)
-            self.flakes.append([it, x, y, random.uniform(0.6, 1.6) * (r / 2 + 0.4), random.uniform(0, 6.28), random.uniform(0.01, 0.03), r])
-        for i in range(9):
+        for i in range(22):
+            x, y, r = random.uniform(0, w), random.uniform(0, h), random.choice((1, 1.5, 2))
+            it = self.canvas.create_oval(x - r, y - r, x + r, y + r, fill=random.choice(("#9d85ff", "#7c5cff", "#c9bcff")), width=0)
+            self.flakes.append([it, x, y, random.uniform(0.2, 0.6) * (r / 2 + 0.4), random.uniform(0, 6.28), random.uniform(0.01, 0.03), r])
+        for i in range(5):
             x, y = random.uniform(0, w), random.uniform(0, h)
-            it = self.canvas.create_text(x, y, text=random.choice("❄✦❅"), fill="#e8e2ff", font=("Segoe UI Symbol", -random.choice((12, 14, 17))))
-            self.flakes.append([it, x, y, random.uniform(0.5, 1.1), random.uniform(0, 6.28), random.uniform(0.01, 0.025), 0])
+            it = self.canvas.create_text(x, y, text="✦", fill="#6d4df0", font=("Segoe UI Symbol", -random.choice((10, 12, 14))))
+            self.flakes.append([it, x, y, random.uniform(0.2, 0.5), random.uniform(0, 6.28), random.uniform(0.01, 0.025), 0])
         self.scene = None
         self.q = queue.Queue()
         self.t0 = time.time()
@@ -596,9 +702,9 @@ class Host:
 
     def entry(self, box, text):
         tk = self.tk
-        e = tk.Entry(self.root, bd=0, relief="flat", bg="#15183a", fg="#ffffff", insertbackground="#ffffff",
-                     font=("Segoe UI", -max(1, round(15 * self.S))), highlightthickness=1, highlightbackground="#3b4080",
-                     highlightcolor="#8b7cff", disabledbackground="#15183a")
+        e = tk.Entry(self.root, bd=0, relief="flat", bg="#0f0c2a", fg="#ffffff", insertbackground="#ffffff",
+                     font=("Segoe UI", -max(1, round(15 * self.S))), highlightthickness=1, highlightbackground="#0f0c2a",
+                     highlightcolor="#0f0c2a", disabledbackground="#0f0c2a")
         e.insert(0, text)
         S = self.S
         e._win = self.canvas.create_window(box[0] * S, box[1] * S, anchor="nw", window=e,

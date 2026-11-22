@@ -50,6 +50,10 @@ def init_db():
         created INTEGER, last_login INTEGER DEFAULT 0, key_used TEXT DEFAULT '');
     CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user_id INTEGER, created INTEGER);
     """)
+    # миграция: отдельная привязка для Android (ПК и телефон работают независимо)
+    cols = [r["name"] for r in c.execute("PRAGMA table_info(users)")]
+    if "hwid_android" not in cols:
+        c.execute("ALTER TABLE users ADD COLUMN hwid_android TEXT DEFAULT ''")
     c.close()
 
 
@@ -122,13 +126,24 @@ def auth_user(c, username, password):
     return u
 
 
-def bind_hwid(c, u, hwid):
-    if not hwid:
-        raise Err("Нет идентификатора ПК", "bad_request")
-    if not u["hwid"]:
-        c.execute("UPDATE users SET hwid=? WHERE id=?", (hwid, u["id"]))
-    elif u["hwid"] != hwid:
-        raise Err("Аккаунт привязан к другому ПК. Напиши владельцу — он сбросит привязку.", "hwid", 403)
+def hw_col(d):
+    """Платформа клиента: "pc" (по умолчанию, старые клиенты) или "android"."""
+    p = d.get("platform", "pc")
+    if p not in ("pc", "android"):
+        raise Err("Неизвестная платформа", "bad_request")
+    return ("hwid_android", "телефону") if p == "android" else ("hwid", "ПК")
+
+
+def bind_hwid(c, u, d):
+    col, name = hw_col(d)
+    hw = d.get("hwid")
+    if not hw:
+        raise Err("Нет идентификатора устройства", "bad_request")
+    if not u[col]:
+        c.execute(f"UPDATE users SET {col}=? WHERE id=?", (hw, u["id"]))
+    elif u[col] != hw:
+        raise Err(f"Аккаунт привязан к другому {'телефону' if col == 'hwid_android' else 'ПК'}. "
+                  "Напиши владельцу — он сбросит привязку.", "hwid", 403)
 
 
 # ------------------------------------------------------------ клиентские методы
@@ -147,7 +162,8 @@ def api_register(c, d, ip):
         k = take_key(c, d["key"], now)
         salt = secrets.token_hex(16)
         exp = 0 if k["days"] == 0 else now + k["days"] * 86400
-        c.execute("INSERT INTO users(username,salt,pw,hwid,expires,created,last_login,key_used) VALUES(?,?,?,?,?,?,?,?)",
+        col, _ = hw_col(d)
+        c.execute(f"INSERT INTO users(username,salt,pw,{col},expires,created,last_login,key_used) VALUES(?,?,?,?,?,?,?,?)",
                   (un, salt, hash_pw(pw, salt), d["hwid"], exp, now, now, k["key"]))
         u = c.execute("SELECT * FROM users WHERE username=?", (un,)).fetchone()
         tok = new_session(c, u["id"])
@@ -161,7 +177,7 @@ def api_register(c, d, ip):
 def api_login(c, d, ip):
     need(d, "username", "password", "hwid")
     u = auth_user(c, d["username"].strip(), d["password"])
-    bind_hwid(c, u, d["hwid"])
+    bind_hwid(c, u, d)
     now = int(time.time())
     if u["expires"] and u["expires"] <= now:
         raise Err("Срок лицензии истёк. Продли её новым ключом.", "expired", 403)
@@ -172,7 +188,7 @@ def api_login(c, d, ip):
 def api_extend(c, d, ip):
     need(d, "username", "password", "key", "hwid")
     u = auth_user(c, d["username"].strip(), d["password"])
-    bind_hwid(c, u, d["hwid"])
+    bind_hwid(c, u, d)
     now = int(time.time())
     c.execute("BEGIN IMMEDIATE")
     try:
@@ -201,8 +217,9 @@ def api_check(c, d, ip):
     u = c.execute("SELECT * FROM users WHERE id=?", (s["user_id"],)).fetchone()
     if not u or u["banned"]:
         raise Err("Аккаунт заблокирован", "banned", 403)
-    if u["hwid"] and u["hwid"] != d["hwid"]:
-        raise Err("Аккаунт привязан к другому ПК", "hwid", 403)
+    col, _ = hw_col(d)
+    if u[col] and u[col] != d["hwid"]:
+        raise Err("Аккаунт привязан к другому устройству", "hwid", 403)
     if u["expires"] and u["expires"] <= int(time.time()):
         raise Err("Срок лицензии истёк", "expired", 403)
     return public(u)
@@ -227,7 +244,7 @@ def adm_keys(c, d):
 
 
 def adm_users(c, d):
-    rows = c.execute("SELECT id,username,hwid,expires,banned,created,last_login,key_used FROM users ORDER BY created DESC").fetchall()
+    rows = c.execute("SELECT id,username,hwid,hwid_android,expires,banned,created,last_login,key_used FROM users ORDER BY created DESC").fetchall()
     return {"ok": True, "users": [dict(r) for r in rows], "server_time": int(time.time())}
 
 
@@ -260,7 +277,13 @@ def adm_extend(c, d):
 
 
 def adm_reset_hwid(c, d):
-    c.execute("UPDATE users SET hwid='' WHERE username=?", (d.get("username"),))
+    pl = d.get("platform")   # "pc" / "android" / не задано = сбросить обе привязки
+    if pl == "pc":
+        c.execute("UPDATE users SET hwid='' WHERE username=?", (d.get("username"),))
+    elif pl == "android":
+        c.execute("UPDATE users SET hwid_android='' WHERE username=?", (d.get("username"),))
+    else:
+        c.execute("UPDATE users SET hwid='', hwid_android='' WHERE username=?", (d.get("username"),))
     return {"ok": True}
 
 

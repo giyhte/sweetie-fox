@@ -174,17 +174,17 @@ class App:
         bt.pack(fill="x", padx=8, pady=8)
         self.add_days = tk.StringVar(value="30")
         ttk.Button(bt, text="Бан / разбан", style="Danger.TButton", command=lambda: self.safe(self.ban)).pack(side="left")
-        ttk.Button(bt, text="Сбросить привязку к ПК", style="Ghost.TButton", command=lambda: self.safe(lambda: self.user_act("/api/admin/reset_hwid"))).pack(side="left", padx=6)
+        ttk.Button(bt, text="Сбросить привязку (ПК и телефон)", style="Ghost.TButton", command=lambda: self.safe(lambda: self.user_act("/api/admin/reset_hwid"))).pack(side="left", padx=6)
         ttk.Label(bt, text="  Добавить дней:").pack(side="left")
         ttk.Entry(bt, textvariable=self.add_days, width=6).pack(side="left", padx=4)
         ttk.Button(bt, text="Продлить", style="Ghost.TButton", command=lambda: self.safe(lambda: self.user_act("/api/admin/extend", days=int(self.add_days.get() or 0)))).pack(side="left")
         ttk.Button(bt, text="Навсегда", style="Ghost.TButton", command=lambda: self.safe(lambda: self.user_act("/api/admin/extend", forever=True))).pack(side="left", padx=6)
         ttk.Button(bt, text="Удалить", style="Danger.TButton", command=lambda: self.safe(self.delete)).pack(side="left", padx=6)
         ttk.Button(bt, text="Обновить", command=lambda: self.safe(self.refresh)).pack(side="right")
-        cols = ("user", "left", "until", "state", "hwid", "key", "last")
+        cols = ("user", "left", "until", "state", "hwid", "hwida", "key", "last")
         self.ut = ttk.Treeview(f, columns=cols, show="headings")
         self._mk_copy_menu(self.ut)
-        for c, t, w in (("user", "Логин", 130), ("left", "Осталось", 90), ("until", "До", 130), ("state", "Статус", 80), ("hwid", "ПК", 110), ("key", "Ключ", 170), ("last", "Последний вход", 130)):
+        for c, t, w in (("user", "Логин", 130), ("left", "Осталось", 90), ("until", "До", 130), ("state", "Статус", 80), ("hwid", "ПК", 90), ("hwida", "Телефон", 90), ("key", "Ключ", 170), ("last", "Последний вход", 130)):
             self.ut.heading(c, text=t)
             self.ut.column(c, width=w)
         self.ut.pack(fill="both", expand=True, padx=8, pady=(0, 8))
@@ -194,7 +194,7 @@ class App:
         self.ut.delete(*self.ut.get_children())
         for u in r["users"]:
             self.ut.insert("", "end", values=(u["username"], fmt_left(u["expires"], r["server_time"]), fmt_ts(u["expires"]),
-                                              "БАН" if u["banned"] else "ок", (u["hwid"] or "—")[:10], u["key_used"], fmt_ts(u["last_login"])))
+                                              "БАН" if u["banned"] else "ок", (u["hwid"] or "—")[:10], (u.get("hwid_android") or "—")[:10], u["key_used"], fmt_ts(u["last_login"])))
 
     def sel_users(self):
         return [self.ut.item(i)["values"][0] for i in self.ut.selection()]

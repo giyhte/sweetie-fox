@@ -27,6 +27,7 @@ public class PulseLiteClient implements ClientModInitializer {
         OPEN_MENU = KeyBindingHelper.registerKeyBinding(
                 new KeyMapping("key.pulselite.menu", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_SHIFT, cat));
         ClientTickEvents.END_CLIENT_TICK.register(PulseLiteClient::tick);
+        PulseTouch.init();   // кнопка меню на экране паузы — для телефона
         ClientReceiveMessageEvents.GAME.register((msg, overlay) -> { if (!overlay) safeMessage(msg.getString()); });
         ClientReceiveMessageEvents.CHAT.register((msg, signed, sender, params, ts) -> safeMessage(msg.getString()));
         AttackEntityCallback.EVENT.register((player, level, hand, entity, hit) -> {
