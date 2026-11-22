@@ -495,7 +495,7 @@ class Scene:
             self.pt.pulse = pv
             if self._pulse_needed():
                 moving = True
-        if now - self._last_cont > 0.07 and self._cont_needed():
+        if now - self._last_cont > 0.15 and self._cont_needed():
             self._last_cont = now
             moving = True
         tr = self._tr
@@ -928,7 +928,11 @@ class Host:
             self.root.attributes("-transparentcolor", self.KEY)
         except Exception:
             pass
-        self._fix_taskbar()
+        # Полный трюк с withdraw/deiconify (_fix_taskbar) нужен только один раз при
+        # самом первом старте, чтобы Windows применила extended-стиль окна и показала
+        # иконку в панели задач. Если делать это ещё и при каждом восстановлении из
+        # трея — окно видимо гаснет и сразу возвращается, что выглядит как "свернул
+        # и тут же развернул обратно".
 
     def _fix_taskbar(self):
         """Окно без рамки по умолчанию пропадает с панели задач — возвращаем."""
@@ -950,13 +954,25 @@ class Host:
         except Exception:
             pass
 
+    def _workarea(self):
+        """Рабочая область экрана (без панели задач), по возможности через Windows API."""
+        try:
+            import ctypes, ctypes.wintypes
+            rect = ctypes.wintypes.RECT()
+            ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0)  # SPI_GETWORKAREA
+            if rect.right > rect.left and rect.bottom > rect.top:
+                return rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
+        except Exception:
+            pass
+        return 0, 0, self.root.winfo_screenwidth(), self.root.winfo_screenheight() - 48
+
     def toggle_max(self):
         if not self._max:
             self._normal_geo = (self.root.winfo_x(), self.root.winfo_y(), self.root.winfo_width(), self.root.winfo_height())
-            sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight() - 48
+            wx, wy, sw, sh = self._workarea()
             s2 = min(sw / self.W, sh / self.H)
             cw, ch = int(self.W * s2), int(self.H * s2)
-            self.root.geometry(f"{cw}x{ch}+{(sw - cw) // 2}+{max(0, (sh - ch) // 2)}")
+            self.root.geometry(f"{cw}x{ch}+{wx + max(0, (sw - cw) // 2)}+{wy + max(0, (sh - ch) // 2)}")
             self._max = True
         else:
             x, y, w, h = self._normal_geo
