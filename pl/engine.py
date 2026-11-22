@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Установка игры, модов, сборка Sweetie Fox Menu, запуск."""
-import os, sys, shutil, subprocess, uuid, zipfile, urllib.parse
+import os, sys, shutil, subprocess, uuid, zipfile, urllib.parse, time
 from .common import *
 
 GRADLE_VER = "9.2.1"
@@ -61,8 +61,10 @@ def game_ok(P):
 def state(P):
     n = 0
     if os.path.isdir(P.mods):
-        n = len([f for f in os.listdir(P.mods) if f.endswith(".jar")])
-    menu = os.path.exists(os.path.join(P.mods, OWN_JAR))
+        n = len([f for f in os.listdir(P.mods) if f.endswith(".jar") and f != OWN_JAR])
+    # меню хранится скрыто (не в папке mods) и подставляется только на время запуска,
+    # поэтому "установлено" определяем по наличию скрытой копии, а не файла в mods
+    menu = os.path.exists(os.path.join(P.bundle, OWN_JAR))
     old = False
     try:
         hf = os.path.join(P.bundle, "mod.hash")
@@ -316,10 +318,30 @@ def ensure_menu_mod(P, ctx, allow_build=True):
                 return False
     else:
         ctx.log("Меню актуально ✓")
-    os.makedirs(P.mods, exist_ok=True)
-    shutil.copy2(jar, os.path.join(P.mods, OWN_JAR))
-    ctx.log("Sweetie Fox Menu установлен — в игре жми Right Shift")
+    # jar хранится только в скрытом bundle; наружу (в mods) кладём лишь на время запуска игры
+    hide_own_mod(P)
+    ctx.log("Sweetie Fox Menu готов — в игре жми Right Shift")
     return True
+
+
+def reveal_own_mod(P):
+    """Положить jar меню в mods перед запуском игры."""
+    src = os.path.join(P.bundle, OWN_JAR)
+    if not os.path.exists(src):
+        return False
+    os.makedirs(P.mods, exist_ok=True)
+    shutil.copy2(src, os.path.join(P.mods, OWN_JAR))
+    return True
+
+
+def hide_own_mod(P):
+    """Убрать jar меню из mods, чтобы его нельзя было просто скопировать из папки игры."""
+    dst = os.path.join(P.mods, OWN_JAR)
+    try:
+        if os.path.exists(dst):
+            os.remove(dst)
+    except Exception:
+        pass
 
 
 def install_all(P, cfg, ctx, force=False):
@@ -335,10 +357,12 @@ def install_all(P, cfg, ctx, force=False):
 
 # ---------- запуск ----------
 def launch(P, cfg):
+    import threading
     import minecraft_launcher_lib as mll
     vid = find_version(P)
     if not vid:
         raise RuntimeError("Игра не установлена")
+    revealed = cfg.get("own_mod", True) and reveal_own_mod(P)
     nick = cfg["nick"] or "Player"
     opts = {"username": nick,
             "uuid": str(uuid.uuid3(uuid.NAMESPACE_DNS, "OfflinePlayer:" + nick)),
@@ -358,5 +382,14 @@ def launch(P, cfg):
     except Exception:
         pass
     cmd = mll.command.get_minecraft_command(vid, P.game, opts)
-    subprocess.Popen(cmd, cwd=P.game, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                     stderr=subprocess.DEVNULL, creationflags=NOWIN)
+    proc = subprocess.Popen(cmd, cwd=P.game, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, creationflags=NOWIN)
+    if revealed:
+        def _rehide():
+            # ждём, пока JVM точно прогрузит классы мода, и убираем файл из mods
+            end = time.time() + 25
+            while time.time() < end and proc.poll() is None:
+                time.sleep(1)
+            hide_own_mod(P)
+        threading.Thread(target=_rehide, daemon=True).start()
+    return proc

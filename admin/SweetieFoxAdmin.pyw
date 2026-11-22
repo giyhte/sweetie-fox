@@ -122,14 +122,16 @@ class App:
         self.out.pack(fill="x", padx=8)
         bt = ttk.Frame(f)
         bt.pack(fill="x", padx=8, pady=6)
-        ttk.Button(bt, text="Скопировать новые ключи", command=self.copy_out).pack(side="left")
-        ttk.Button(bt, text="Копировать выбранный", command=self.copy_sel).pack(side="left", padx=6)
-        ttk.Button(bt, text="Отозвать", command=lambda: self.safe(lambda: self.key_act("/api/admin/revoke"))).pack(side="left", padx=6)
-        ttk.Button(bt, text="Вернуть", command=lambda: self.safe(lambda: self.key_act("/api/admin/revoke", undo=True))).pack(side="left")
-        ttk.Button(bt, text="Удалить", command=lambda: self.safe(lambda: self.key_act("/api/admin/delkey"))).pack(side="left", padx=6)
+        ttk.Button(bt, text="Скопировать новые ключи", style="Ghost.TButton", command=self.copy_out).pack(side="left")
+        ttk.Button(bt, text="Копировать выбранный", style="Ghost.TButton", command=self.copy_sel).pack(side="left", padx=6)
+        ttk.Button(bt, text="Отозвать", style="Ghost.TButton", command=lambda: self.safe(lambda: self.key_act("/api/admin/revoke"))).pack(side="left", padx=6)
+        ttk.Button(bt, text="Вернуть", style="Ghost.TButton", command=lambda: self.safe(lambda: self.key_act("/api/admin/revoke", undo=True))).pack(side="left")
+        ttk.Button(bt, text="Удалить", style="Danger.TButton", command=lambda: self.safe(lambda: self.key_act("/api/admin/delkey"))).pack(side="left", padx=6)
         ttk.Button(bt, text="Обновить", command=lambda: self.safe(self.refresh)).pack(side="right")
+        ttk.Label(f, text=self._copy_hint, style="Sub.TLabel").pack(anchor="w", padx=10, pady=(0, 4))
         cols = ("key", "days", "uses", "state", "note", "created")
         self.kt = ttk.Treeview(f, columns=cols, show="headings", height=10)
+        self._mk_copy_menu(self.kt)
         for c, t, w in (("key", "Ключ", 200), ("days", "Срок", 90), ("uses", "Использовано", 100), ("state", "Статус", 100), ("note", "Заметка", 220), ("created", "Создан", 140)):
             self.kt.heading(c, text=t)
             self.kt.column(c, width=w)
@@ -171,16 +173,17 @@ class App:
         bt = ttk.Frame(f)
         bt.pack(fill="x", padx=8, pady=8)
         self.add_days = tk.StringVar(value="30")
-        ttk.Button(bt, text="Бан / разбан", command=lambda: self.safe(self.ban)).pack(side="left")
-        ttk.Button(bt, text="Сбросить привязку к ПК", command=lambda: self.safe(lambda: self.user_act("/api/admin/reset_hwid"))).pack(side="left", padx=6)
+        ttk.Button(bt, text="Бан / разбан", style="Danger.TButton", command=lambda: self.safe(self.ban)).pack(side="left")
+        ttk.Button(bt, text="Сбросить привязку к ПК", style="Ghost.TButton", command=lambda: self.safe(lambda: self.user_act("/api/admin/reset_hwid"))).pack(side="left", padx=6)
         ttk.Label(bt, text="  Добавить дней:").pack(side="left")
         ttk.Entry(bt, textvariable=self.add_days, width=6).pack(side="left", padx=4)
-        ttk.Button(bt, text="Продлить", command=lambda: self.safe(lambda: self.user_act("/api/admin/extend", days=int(self.add_days.get() or 0)))).pack(side="left")
-        ttk.Button(bt, text="Навсегда", command=lambda: self.safe(lambda: self.user_act("/api/admin/extend", forever=True))).pack(side="left", padx=6)
-        ttk.Button(bt, text="Удалить", command=lambda: self.safe(self.delete)).pack(side="left", padx=6)
+        ttk.Button(bt, text="Продлить", style="Ghost.TButton", command=lambda: self.safe(lambda: self.user_act("/api/admin/extend", days=int(self.add_days.get() or 0)))).pack(side="left")
+        ttk.Button(bt, text="Навсегда", style="Ghost.TButton", command=lambda: self.safe(lambda: self.user_act("/api/admin/extend", forever=True))).pack(side="left", padx=6)
+        ttk.Button(bt, text="Удалить", style="Danger.TButton", command=lambda: self.safe(self.delete)).pack(side="left", padx=6)
         ttk.Button(bt, text="Обновить", command=lambda: self.safe(self.refresh)).pack(side="right")
         cols = ("user", "left", "until", "state", "hwid", "key", "last")
         self.ut = ttk.Treeview(f, columns=cols, show="headings")
+        self._mk_copy_menu(self.ut)
         for c, t, w in (("user", "Логин", 130), ("left", "Осталось", 90), ("until", "До", 130), ("state", "Статус", 80), ("hwid", "ПК", 110), ("key", "Ключ", 170), ("last", "Последний вход", 130)):
             self.ut.heading(c, text=t)
             self.ut.column(c, width=w)
@@ -210,6 +213,50 @@ class App:
     def delete(self):
         if self.sel_users() and messagebox.askyesno("Удалить", "Удалить выбранных пользователей?"):
             self.user_act("/api/admin/deluser")
+
+
+    # ---- копирование из таблиц ----
+    def _mk_copy_menu(self, tree):
+        m = tk.Menu(self.root, tearoff=0, bg=PANEL2, fg=FG, activebackground=ACC, activeforeground="#fff", bd=0)
+        m.add_command(label="Копировать строку", command=lambda: self._copy_row(tree))
+        m.add_command(label="Копировать ячейку", command=lambda: self._copy_cell(tree))
+        m.add_command(label="Копировать всю таблицу", command=lambda: self._copy_table(tree))
+
+        def show(e):
+            iid = tree.identify_row(e.y)
+            if iid and iid not in tree.selection():
+                tree.selection_set(iid)
+            tree._last_col = tree.identify_column(e.x)
+            m.tk_popup(e.x_root, e.y_root)
+        tree.bind("<Button-3>", show)
+        tree.bind("<Control-c>", lambda e: self._copy_row(tree))
+
+    def _clip(self, text):
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+
+    def _copy_row(self, tree):
+        rows = ["\t".join(str(v) for v in tree.item(i)["values"]) for i in tree.selection()]
+        if rows:
+            self._clip("\n".join(rows))
+
+    def _copy_cell(self, tree):
+        sel = tree.selection()
+        if not sel:
+            return
+        col = getattr(tree, "_last_col", "#1")
+        try:
+            idx = int(col.replace("#", "")) - 1
+            self._clip(str(tree.item(sel[0])["values"][idx]))
+        except Exception:
+            self._copy_row(tree)
+
+    def _copy_table(self, tree):
+        cols = tree["columns"]
+        rows = ["\t".join(tree.heading(c)["text"] for c in cols)]
+        for i in tree.get_children():
+            rows.append("\t".join(str(v) for v in tree.item(i)["values"]))
+        self._clip("\n".join(rows))
 
 
 if __name__ == "__main__":

@@ -158,6 +158,24 @@ class Painter:
         self._fill(ov, box, (255, 255, 255, 46 if hover and enabled else 24), self.mask(w, h, r))
         self._fill(ov, box, (255, 255, 255, 70 if hover and enabled else 44), self.mask(w, h, r, 1))
 
+    def glassbtn(self, ov, box, hv=0.0, enabled=True, accent=False, r=None):
+        """Единая полупрозрачная кнопка для всего лаунчера. hv — 0..1 (анимированная наводка)."""
+        w, h = box[2] - box[0], box[3] - box[1]
+        r = (min(16, h // 2)) if r is None else r
+        hv = hv if enabled else 0.0
+        base = 30 + int(26 * hv)
+        if accent and enabled:
+            self.glow(ov, box, VIOLET if hv < 0.5 else (170, 140, 255), r)
+            c1 = tuple(int(a + (b - a) * hv * 0.35) for a, b in zip((70, 50, 150), VIOLET))
+            c2 = tuple(int(a + (b - a) * hv * 0.35) for a, b in zip((60, 44, 130), CYAN))
+            self._grad_fill(ov, box, c1, c2, r, False)
+            self._fill(ov, box, (255, 255, 255, int(10 + 28 * hv)), self.mask(w, h, r))
+        else:
+            self._fill(ov, box, (255, 255, 255, base if enabled else 16), self.mask(w, h, r))
+        border = 48 + int(40 * hv) if enabled else 30
+        self._fill(ov, box, (255, 255, 255, border), self.mask(w, h, r, 1))
+        self.sheen(ov, box, r, int(30 + 35 * hv) if enabled else 14)
+
     def switch(self, ov, box, on, hover=False):
         x0, y0, x1, y1 = box
         w, h = x1 - x0, y1 - y0
@@ -257,6 +275,27 @@ class Scene:
         self.dirty = True
         self.hover = None
         self.drag = None
+        self._anim_t = time.perf_counter()
+
+    def tick_anim(self):
+        now = time.perf_counter()
+        dt = now - self._anim_t
+        self._anim_t = now
+        moving = False
+        for r in self.regions:
+            if r["kind"] not in ("button", "img"):
+                continue
+            en = r["en"]() if r["kind"] == "button" else True
+            tgt = 1.0 if (r is self.hover and en) else 0.0
+            hv = r.get("hv", 0.0)
+            nh = hv + (tgt - hv) * min(1.0, dt * 10.0)
+            if abs(nh - hv) > 0.0015:
+                moving = True
+            else:
+                nh = tgt
+            r["hv"] = nh
+        if moving:
+            self.refresh()
 
     # --- тексты ---
     def text(self, key, x, y, s, size=13, bold=False, fill="#e8eaff", anchor="nw", width=None):
@@ -337,13 +376,11 @@ class Scene:
         for r in self.regions:
             if not self._vis(r):
                 continue
-            k, hv = r["kind"], r is self.hover
+            k, hv = r["kind"], r.get("hv", 0.0)
             if k == "button":
                 en = r["en"]()
-                if r["style"] == "primary" or (r["style"] == "nav" and r["sel"]()):
-                    self.pt.pill(ov, r["box"], r["colors"][0], r["colors"][1], hv, en)
-                else:
-                    self.pt.ghost(ov, r["box"], hv, en)
+                accent = r["style"] == "primary" or (r["style"] == "nav" and r["sel"]())
+                self.pt.glassbtn(ov, r["box"], hv, en, accent)
             elif k == "switch":
                 self.pt.switch(ov, r["box"], r["get"](), hv)
             elif k == "slider":
@@ -354,7 +391,12 @@ class Scene:
                 self.pt.dot(ov, r["c"][0], r["c"][1], r["col"]())
             elif k == "img":
                 b = r["box"]
-                self.pt.image(ov, r["hover"] if hv else r["img"], (b[0], b[1]))
+                self.pt.image(ov, r["img"], (b[0], b[1]))
+                if hv > 0.01:
+                    layer = r["hover"].copy()
+                    a = layer.getchannel("A").point(lambda v, hv=hv: int(v * hv))
+                    layer.putalpha(a)
+                    self.pt.image(ov, layer, (b[0], b[1]))
                 if r["sel"]():
                     self.pt._fill(ov, b, (255, 255, 255, 70), self.pt.mask(b[2] - b[0], b[3] - b[1], 10, 2))
         return ov
@@ -491,6 +533,7 @@ class Host:
             traceback.print_exc()
         try:
             if self.scene and self.root.state() != "iconic":
+                self.scene.tick_anim()
                 if self.scene.dirty or self.overlay is None:
                     self.overlay = self.scene.paint()
                     self.scene.dirty = False

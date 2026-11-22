@@ -14,9 +14,33 @@ public final class PulseEvents {
     private PulseEvents() {}
 
     public static final class Marker {
-        public String name; public double x, y, z; public boolean hasY; public long until;
+        public String name, type = "other"; public double x, y, z; public boolean hasY; public long until;
     }
     public static final List<Marker> LIST = new ArrayList<>();
+
+    /** Типы ивентов: id, название, ключевые слова. Порядок важен — «other» последний. */
+    public static final String[][] TYPES = {
+            {"airdrop", "Аирдроп", "аирдроп", "airdrop", "дроп"},
+            {"meteor", "Метеорит", "метеорит", "meteor"},
+            {"tornado", "Смерч", "смерч", "торнадо", "tornado"},
+            {"storm", "Шторм", "шторм", "storm"},
+            {"boss", "Босс", "босс", "boss"},
+            {"chest", "Сундук", "сундук", "chest"},
+            {"beacon", "Маяк", "маяк", "beacon"},
+            {"volcano", "Вулкан", "вулкан", "volcano"},
+            {"other", "Другое", "ивент", "event"}};
+
+    public static boolean shown(String type) { return !PulseConfig.get().eventOff.contains(type); }
+    public static boolean soundOn(String type) { return !PulseConfig.get().eventMute.contains(type); }
+
+    public static void setShown(String type, boolean on) {
+        java.util.List<String> l = PulseConfig.get().eventOff;
+        if (on) l.remove(type); else if (!l.contains(type)) l.add(type);
+    }
+    public static void setSound(String type, boolean on) {
+        java.util.List<String> l = PulseConfig.get().eventMute;
+        if (on) l.remove(type); else if (!l.contains(type)) l.add(type);
+    }
     private static final Pattern LABELED = Pattern.compile("(?i)x\\s*[:=]?\\s*(-?\\d+)[^\\d-]{0,14}?(?:y\\s*[:=]?\\s*(-?\\d+)[^\\d-]{0,14}?)?z\\s*[:=]?\\s*(-?\\d+)");
     private static final Pattern TRIPLE = Pattern.compile("(-?\\d{1,6})\\s*[,;\\s]\\s*(-?\\d{1,3})\\s*[,;\\s]\\s*(-?\\d{1,6})");
     private static final Pattern PAIR = Pattern.compile("(-?\\d{2,6})\\s*[,;\\s]\\s*(-?\\d{2,6})");
@@ -26,9 +50,15 @@ public final class PulseEvents {
         if (!c.eventTracker || raw == null) return;
         String text = raw.replaceAll("§.", "");
         String low = text.toLowerCase();
-        String key = null;
-        for (String k : c.eventKeywords) if (low.contains(k.toLowerCase())) { key = k; break; }
-        if (key == null) return;
+        String key = null, type = null;
+        outer:
+        for (String[] t : TYPES) {
+            for (int i = 2; i < t.length; i++) if (low.contains(t[i])) { key = t[i]; type = t[0]; break outer; }
+        }
+        if (key == null) {
+            for (String k : c.eventKeywords) if (k != null && !k.isEmpty() && low.contains(k.toLowerCase())) { key = k; type = "other"; break; }
+        }
+        if (key == null || !shown(type)) return;
         double x, y = 0, z; boolean hasY = false;
         Matcher m = LABELED.matcher(text);
         if (m.find()) {
@@ -42,28 +72,33 @@ public final class PulseEvents {
         String name = text.substring(0, Math.min(text.length(), m.start())).replaceAll("[\\[\\]:>\\-–—•]+", " ").trim();
         if (name.length() > 26) name = name.substring(name.length() - 26).trim();
         if (name.isEmpty()) name = key.substring(0, 1).toUpperCase() + key.substring(1);
-        add(name, x, y, z, hasY, true);
+        add(name, type, x, y, z, hasY, true);
     }
 
-    public static void add(String name, double x, double y, double z, boolean hasY, boolean announce) {
+    public static void add(String name, String type, double x, double y, double z, boolean hasY, boolean announce) {
         PulseConfig c = PulseConfig.get();
         for (Marker o : LIST) if (Math.abs(o.x - x) < 8 && Math.abs(o.z - z) < 8) { o.until = System.currentTimeMillis() + c.eventTimeout * 1000L; return; }
         Marker k = new Marker();
-        k.name = name; k.x = x; k.y = y; k.z = z; k.hasY = hasY;
+        k.name = name; k.type = type; k.x = x; k.y = y; k.z = z; k.hasY = hasY;
         k.until = System.currentTimeMillis() + c.eventTimeout * 1000L;
         LIST.add(k);
         Minecraft mc = Minecraft.getInstance();
         if (announce) {
-            if (c.eventSound) PulseSounds.play("event_alert", 1f, 1f);
+            if (c.eventSound && soundOn(type)) playAlert();
             if (mc.gui != null) mc.gui.setOverlayMessage(Component.literal("⚑ " + name + "  X " + (int) x + (hasY ? " Y " + (int) y : "") + " Z " + (int) z), false);
         }
+    }
+
+    public static void playAlert() {
+        PulseConfig c = PulseConfig.get();
+        PulseSounds.playLib(c.eventSoundType, c.eventVolume, c.eventPitch);
     }
 
     public static void test() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
         double a = Math.toRadians(mc.player.getYRot());
-        add("Тестовый ивент", mc.player.getX() - Math.sin(a) * 120, mc.player.getY() + 10, mc.player.getZ() + Math.cos(a) * 120, true, true);
+        add("Тестовый ивент", "test", mc.player.getX() - Math.sin(a) * 120, mc.player.getY() + 10, mc.player.getZ() + Math.cos(a) * 120, true, true);
     }
 
     private static final String[] ARROWS = {"↑", "↗", "→", "↘", "↓", "↙", "←", "↖"};
@@ -91,7 +126,9 @@ public final class PulseEvents {
         int accent = PulseTheme.accent(c.menuPreset) | 0xFF000000;
         int accRgb = accent & 0xFFFFFF;
 
-        List<Marker> sorted = new ArrayList<>(LIST);
+        List<Marker> sorted = new ArrayList<>();
+        for (Marker k : LIST) if (k.type.equals("test") || shown(k.type)) sorted.add(k);
+        if (sorted.isEmpty()) return;
         sorted.sort((a, b) -> Double.compare(Math.hypot(a.x - px, a.z - pz), Math.hypot(b.x - px, b.z - pz)));
 
         // ---- метки в мире

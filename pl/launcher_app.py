@@ -35,6 +35,10 @@ class LauncherScene(Scene):
         self._alive = True
         self.cfg = load_cfg(P)
         self.busy, self.prog = False, 0.0
+        self.proc = None
+        self.launch_pending = False
+        self.launch_cancel = False
+        engine.hide_own_mod(P)  # подчистить, если осталось с прошлого запуска
         self.st = engine.state(P)
         self.nav = "home"
         pt = self.pt
@@ -82,7 +86,7 @@ class LauncherScene(Scene):
         self.text("nh", 258, 408, "Последние новости", 17, True, "#ffffff")
         self.text("n1", 258, 448, "Добро пожаловать в sweetie fox!", 16, True, "#ffffff")
         self.text("n2", 258, 476, "Спасибо, что выбрали наш лаунчер.\nИграйте с удовольствием ♡", 14, False, SUB, width=560)
-        self.text("n3", 258, 540, "Меню в игре: Right Shift  •  Зум: C", 12, False, DIM)
+        self.text("n3", 258, 540, "Меню в игре: Right Shift", 12, False, DIM)
 
         # ---- Версии ----
         self.card("versions", "Версии Minecraft")
@@ -99,7 +103,7 @@ class LauncherScene(Scene):
         self.slider((262, 214, 822, 234), lambda: self.cfg["ram"], self._set_ram, 1024, 8192, 256)
         for i, (k, name, hint) in enumerate([
                 ("low_mode", "Режим для слабого ПК", "минимум графики: дальность 6, без частиц и теней"),
-                ("own_mod", "Sweetie Fox Menu в игре", "меню на Right Shift: визуал, буст FPS, градиентное меню")]):
+                ("own_mod", "Sweetie Fox Menu в игре", "меню на Right Shift: основное, визуалы (звуки, ивенты), буст FPS")]):
             y = 268 + i * 56
             self.text("o_" + k, 262, y, name, 15, True, "#ffffff")
             self.text("h_" + k, 262, y + 22, hint, 12, False, DIM)
@@ -191,7 +195,8 @@ class LauncherScene(Scene):
         names = sorted(f[:-4] for f in os.listdir(self.P.mods) if f.endswith(".jar")) if os.path.isdir(self.P.mods) else []
         self.set_text("modlist", ("Установлено: %d\n\n" % len(names)) + "\n".join("• " + n for n in names[:14])
                       if names else "Модов пока нет — нажми «УСТАНОВИТЬ» на главной.")
-        self.set_text("b_main", ("ОБНОВИТЬ МЕНЮ" if self.st["menu"] else "УСТАНОВИТЬ МЕНЮ") if need_menu else ("▶  ИГРАТЬ" if self.st["game"] else "УСТАНОВИТЬ"))
+        if not self.launch_pending:
+            self.set_text("b_main", ("ОБНОВИТЬ МЕНЮ" if self.st["menu"] else "УСТАНОВИТЬ МЕНЮ") if need_menu else ("▶  ИГРАТЬ" if self.st["game"] else "УСТАНОВИТЬ"))
         self.refresh()
 
     def save(self):
@@ -220,12 +225,26 @@ class LauncherScene(Scene):
             try:
                 self.lic.check()
             except lic_mod.LicenseError as e:
-                msg, code = str(e), e.code
-                self.host.post(lambda: self._gate(msg, "ext" if code == "expired" else "login"))
+                code = e.code
+                if code == "banned":
+                    self.host.post(self._kick_banned)
+                else:
+                    self.host.post(lambda: self._gate(str(e), "ext" if code == "expired" else "login"))
             except Exception:
                 pass
         threading.Thread(target=work, daemon=True).start()
-        self.host.root.after(10 * 60 * 1000, self._lic_recheck)
+        # пока идёт игра — проверяем чаще, чтобы бан сработал быстро и во время игры
+        playing = self.proc is not None and self.proc.poll() is None
+        self.host.root.after(30 * 1000 if playing else 10 * 60 * 1000, self._lic_recheck)
+
+    def _kick_banned(self):
+        if self.proc:
+            try:
+                self.proc.terminate()
+            except Exception:
+                pass
+            self.proc = None
+        self._gate("Вы получили блокировку", "login")
 
     def _gate(self, note="", mode="login"):
         if not self._alive:
@@ -243,6 +262,8 @@ class LauncherScene(Scene):
         super().destroy()
 
     def on_main(self):
+        if self.launch_pending:
+            return self.cancel_launch()
         if self.lic and not self.lic.valid():
             return self._gate("Нужна действующая лицензия", "ext")
         if self.busy:
@@ -250,14 +271,56 @@ class LauncherScene(Scene):
         if self.st["game"] and self.cfg["own_mod"] and (not self.st["menu"] or self.st["menu_old"]):
             self.on_install(menu_only=True)
         elif self.st["game"]:
-            self.save()
-            try:
-                engine.launch(self.P, self.cfg)
-                self.set_text("status", "Игра запускается — окно появится через несколько секунд")
-            except Exception as e:
-                self.set_text("status", f"Ошибка: {e}")
+            self.start_launch()
         else:
             self.on_install()
+
+    def start_launch(self):
+        self.save()
+        self.launch_pending, self.launch_cancel, self.proc = True, False, None
+        self.set_text("b_main", "ОТМЕНА ЗАПУСКА")
+        self.set_text("status", "Подготовка запуска… можно нажать ещё раз, чтобы отменить")
+        self.refresh()
+        post = self.host.post
+
+        def work():
+            try:
+                proc = engine.launch(self.P, self.cfg)
+            except Exception as e:
+                return post(lambda: self._launch_failed(str(e)))
+            post(lambda: self._launch_started(proc))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _launch_started(self, proc):
+        if self.launch_cancel:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+            self.set_text("status", "Запуск отменён")
+            engine.hide_own_mod(self.P)
+        else:
+            self.proc = proc
+            self.set_text("status", "Игра запускается — окно появится через несколько секунд")
+        self.launch_pending = False
+        self.refresh_state()
+
+    def _launch_failed(self, msg):
+        self.launch_pending = False
+        self.set_text("status", f"Ошибка: {msg}")
+        engine.hide_own_mod(self.P)
+        self.refresh_state()
+
+    def cancel_launch(self):
+        self.launch_cancel = True
+        if self.proc:
+            try:
+                self.proc.terminate()
+            except Exception:
+                pass
+            self.proc = None
+        self.set_text("status", "Отменяю запуск…")
+        self.refresh()
 
     def on_install(self, menu_only=False, force=False):
         if self.busy:

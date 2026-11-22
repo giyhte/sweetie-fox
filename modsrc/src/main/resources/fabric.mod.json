@@ -3,7 +3,7 @@
   "id": "pulselite",
   "version": "${version}",
   "name": "Sweetie Fox Menu",
-  "description": "Меню в игре (Right Shift): визуал, буст FPS, градиентное главное меню.",
+  "description": "Меню в игре (Right Shift): основное (HUD), визуалы (звуки, ивенты), буст FPS.",
   "authors": ["Sweetie Fox"],
   "license": "MIT",
   "environment": "client",
