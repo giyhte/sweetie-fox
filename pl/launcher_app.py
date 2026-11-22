@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import os, threading
-from PIL import Image, ImageEnhance, ImageChops
+from PIL import Image, ImageChops
 from .common import *
 from . import engine, updater
 from .ui import Host, Scene
@@ -12,12 +12,10 @@ SUB = "#c4bff0"
 DIM = "#9a94d0"
 OK, BAD = (134, 239, 172), (251, 113, 133)
 PAGES = ["home", "versions", "set", "acc", "mods", "res", "about"]
-
-
-def bright(im, k=1.25):
-    r, g, b, a = im.split()
-    rgb = ImageEnhance.Brightness(Image.merge("RGB", (r, g, b))).enhance(k)
-    return Image.merge("RGBA", (*rgb.split(), a))
+NAV_LABELS = {
+    "home": "Главная", "versions": "Версии Minecraft", "set": "Настройки",
+    "acc": "Аккаунты", "mods": "Моды", "res": "Ресурспаки", "about": "О лаунчере",
+}
 
 
 def cover(im, w, h):
@@ -50,9 +48,6 @@ class LauncherScene(Scene):
         fox.putalpha(ImageChops.multiply(fox.getchannel("A"), pt.mask(fox.width, fox.height, 18)))
         banner = cover(pt.asset("banner.png"), 612, 150)
         banner.putalpha(ImageChops.multiply(banner.getchannel("A"), pt.mask(612, 150, 20)))
-        navimg = pt.asset("nav.png")
-        nw, nh = navimg.size
-        bh = nh / 7.0
 
         # ---- каркас ----
         self.under.append(lambda ov: pt.glass(ov, (16, 16, 864, 604), 30, 105, 16))
@@ -66,11 +61,9 @@ class LauncherScene(Scene):
             self.text("lic_left", 848, 54, "", 13, False, SUB, "ne")
             self.button("b_logout", (768, 80, 848, 104), "Выйти", self._logout, "ghost", 12)
         for i, k in enumerate(PAGES):
-            part = navimg.crop((0, int(round(i * bh)), nw, int(round((i + 1) * bh))))
-            part = part.resize((160, int(part.height * 160 / nw)), Image.LANCZOS)
             y = 124 + i * 46
-            self.imgbtn((44, y, 44 + part.width, y + part.height), part, bright(part), (lambda k=k: self.go(k)),
-                        (lambda k=k: self.nav == k))
+            self.button("nav_" + k, (44, y, 204, y + 38), NAV_LABELS[k], (lambda k=k: self.go(k)),
+                       "nav", 13, sel=(lambda k=k: self.nav == k))
 
         # ---- Главная ----
         self.tag = "home"
