@@ -13,6 +13,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.12' }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21' }
+      - name: Сборка клиента DCODE (jar)
+        shell: pwsh
+        working-directory: client-src
+        run: |
+          .\gradlew.bat build --no-daemon
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $jar = Get-ChildItem build/libs/*.jar | Where-Object { $_.Name -notmatch 'sources|dev' } | Select-Object -First 1
+          if (-not $jar) { Write-Error "jar клиента не собрался"; exit 1 }
+          New-Item -ItemType Directory -Force ../client | Out-Null
+          Copy-Item $jar.FullName ../client/dcode-client.jar -Force
       - name: Версия из тега релиза
         if: github.event_name == 'release'
         shell: pwsh
@@ -22,28 +34,18 @@ jobs:
       - name: Проверка файлов
         shell: pwsh
         run: |
-          foreach ($f in 'pl/__init__.py','pl/boot.py','pl/launcher_app.py','pl/license.py','pl/license_ui.py','assets/icon.ico','assets/scene.png','assets/nav.png','assets/banner.png','assets/fox.png','modsrc/build.gradle','modsrc/src/main/resources/assets/pulselite/textures/gui/fox_head.png','modsrc/src/main/resources/assets/pulselite/textures/gui/fox_sleep.png','SweetieFox.pyw') { if (-not (Test-Path $f)) { Write-Error "Нет файла в репозитории: $f"; exit 1 } }
+          foreach ($f in 'pl/__init__.py','pl/boot.py','pl/launcher_app.py','pl/license.py','pl/license_ui.py','assets/icon.ico','DCODE.pyw') { if (-not (Test-Path $f)) { Write-Error "Нет файла в репозитории: $f"; exit 1 } }
       - run: pip install pillow minecraft-launcher-lib pyinstaller
-      - name: Папка для готового меню
-        shell: pwsh
-        run: New-Item -ItemType Directory -Force modjar | Out-Null; Set-Content modjar/.keep ""
-      - uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: '21' }
-      - uses: gradle/actions/setup-gradle@v4
-        with: { gradle-version: '9.2.1' }
-      - name: Сборка меню (jar вшивается в exe; при ошибке лаунчер соберёт сам)
-        continue-on-error: true
-        run: python devtools/build_mod_ci.py
-      - run: pyinstaller --onefile --windowed --name SweetieFox --icon assets/icon.ico --add-data "assets;assets" --add-data "modsrc;modsrc" --add-data "modjar;modjar" --paths . --collect-submodules pl --hidden-import pl.boot --hidden-import pl.launcher_app --hidden-import pl.installer --hidden-import pl.updater --hidden-import pl.engine --hidden-import pl.ui --hidden-import pl.common --hidden-import pl.license --hidden-import pl.license_ui SweetieFox.pyw
+      - run: pyinstaller --onefile --windowed --name DCODE --icon assets/icon.ico --add-data "assets;assets" --add-data "client;client" --paths . --collect-submodules pl --hidden-import pl.boot --hidden-import pl.launcher_app --hidden-import pl.installer --hidden-import pl.updater --hidden-import pl.engine --hidden-import pl.ui --hidden-import pl.common --hidden-import pl.license --hidden-import pl.license_ui DCODE.pyw
       - uses: actions/upload-artifact@v4
-        with: { name: SweetieFox-exe, path: dist/SweetieFox.exe }
+        with: { name: DCODE-exe, path: dist/DCODE.exe }
       - name: Прикрепить exe к релизу
         if: github.event_name == 'release'
         shell: pwsh
-        run: gh release upload "${{ github.event.release.tag_name }}" dist/SweetieFox.exe --clobber
+        run: gh release upload "${{ github.event.release.tag_name }}" dist/DCODE.exe --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Админ-программа (только артефакт, не в релиз)
-        run: pyinstaller --onefile --windowed --name SweetieFoxAdmin admin/SweetieFoxAdmin.pyw
+        run: pyinstaller --onefile --windowed --name DCODEAdmin admin/DCODEAdmin.pyw
       - uses: actions/upload-artifact@v4
-        with: { name: SweetieFoxAdmin-exe, path: dist/SweetieFoxAdmin.exe }
+        with: { name: DCODEAdmin-exe, path: dist/DCODEAdmin.exe }

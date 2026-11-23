@@ -1,1 +1,1 @@
-# Sweetie Fox launcher package
+# DCODE launcher package

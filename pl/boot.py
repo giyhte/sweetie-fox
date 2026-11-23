@@ -53,7 +53,7 @@ def ensure_deps(root):
     from tkinter import messagebox
     w, h = 460, 200
     r = tk.Tk()
-    r.title("Sweetie Fox")
+    r.title("DCODE")
     r.resizable(False, False)
     r.geometry(f"{w}x{h}+{(r.winfo_screenwidth()-w)//2}+{(r.winfo_screenheight()-h)//2}")
     c = tk.Canvas(r, width=w, height=h, highlightthickness=0, bd=0)
@@ -100,7 +100,7 @@ def ensure_deps(root):
     sys.path_importer_cache.clear()
     if res.get("code") != 0 or not _ok():
         rr = tk.Tk(); rr.withdraw()
-        messagebox.showerror("Sweetie Fox", "Не удалось установить компоненты.\nПроверь интернет и попробуй снова.\n\n"
+        messagebox.showerror("DCODE", "Не удалось установить компоненты.\nПроверь интернет и попробуй снова.\n\n"
                              + res.get("out", "")[-600:])
         sys.exit(1)
 
@@ -108,7 +108,7 @@ def ensure_deps(root):
 def crash(root):
     tb = traceback.format_exc()
     try:
-        with open(os.path.join(root, "sweetiefox_crash.log"), "a", encoding="utf-8") as f:
+        with open(os.path.join(root, "dcode_crash.log"), "a", encoding="utf-8") as f:
             f.write(time.strftime("%Y-%m-%d %H:%M:%S\n") + tb + "\n")
     except Exception:
         pass
@@ -116,6 +116,6 @@ def crash(root):
         import tkinter as tk
         from tkinter import messagebox
         r = tk.Tk(); r.withdraw()
-        messagebox.showerror("Sweetie Fox", "Ошибка:\n\n" + tb[-900:] + "\n\nЛог: sweetiefox_crash.log")
+        messagebox.showerror("DCODE", "Ошибка:\n\n" + tb[-900:] + "\n\nЛог: dcode_crash.log")
     except Exception:
         pass

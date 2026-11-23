@@ -74,7 +74,7 @@ class Lic:
     # --- сеть ---
     def api(self, path, payload):
         req = urllib.request.Request(self.url + path, data=json.dumps(payload).encode(),
-                                     headers={"Content-Type": "application/json", "User-Agent": "SweetieFox-Launcher"})
+                                     headers={"Content-Type": "application/json", "User-Agent": "DCODE-Launcher"})
         try:
             with urllib.request.urlopen(req, timeout=8) as r:
                 return json.loads(r.read().decode())

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Сервер лицензий Sweetie Fox. Без внешних зависимостей (только стандартная библиотека Python 3.8+).
+"""Сервер лицензий DCODE. Без внешних зависимостей (только стандартная библиотека Python 3.8+).
 
 Запуск:   python license_server.py            (порт 8787, переменные: SF_PORT, SF_DB, SF_ADMIN_TOKEN)
 Хостинг:  любой VPS / PythonAnywhere (WSGI: объект `application`) / Render и т.п.
@@ -364,5 +364,5 @@ if __name__ == "__main__":
     port = int(os.environ.get("SF_PORT", "8787"))
     ADMIN = admin_token()
     init_db()
-    print(f"Sweetie Fox license server: http://0.0.0.0:{port}   (БД: {DB_PATH})")
+    print(f"DCODE license server: http://0.0.0.0:{port}   (БД: {DB_PATH})")
     make_server("0.0.0.0", port, application, handler_class=Quiet).serve_forever()

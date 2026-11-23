@@ -1,4 +1,4 @@
-# Sweetie Fox для Android — что уже готово и что делать дальше
+# DCODE для Android — что уже готово и что делать дальше
 
 ## Уже сделано в этом архиве
 - **Сервер** (`server/license_server.py`): поле `"platform": "pc" | "android"` во всех запросах

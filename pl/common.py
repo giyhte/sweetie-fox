@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
-import json, os, sys, subprocess, shutil, urllib.request, hashlib
+import json, os, sys, subprocess, shutil, urllib.request
 
-APP = "Sweetie Fox"
+APP = "DCODE"
 VERSION = "2.0"
-MC_VERSION = "1.21.11"
-UA = "SweetieFox-Launcher/2.0"
+MC_VERSION = "1.21.4"
+UA = "DCODE-Launcher/2.0"
 WIN = sys.platform.startswith("win")
 NOWIN = 0x08000000 if WIN else 0
 MODS = ["fabric-api", "sodium", "lithium", "ferrite-core", "entityculling",
         "immediatelyfast", "dynamic-fps", "modernfix", "krypton"]
-OWN_JAR = "pulselite-menu.jar"
+OWN_JAR = "dcode-client.jar"
+# Ссылка на скачивание jar клиента (GitHub Release и т.п.). Если пусто — берётся файл client/dcode-client.jar рядом с лаунчером.
+CLIENT_URL = ""
 DEFAULT_CFG = {"nick": "Player", "ram": 2048, "low_mode": True, "server": "mc.funtime.su",
-               "autojoin": False, "own_mod": True}
+               "autojoin": False, "client_url": ""}
 
 
 RES = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -22,9 +24,6 @@ class Paths:
         self.root = root
         self.game = os.path.join(root, "game")
         self.libs = os.path.join(root, "libs")
-        self.tools = os.path.join(root, "tools")
-        self.bundle = os.path.join(root, "bundle")
-        self.modsrc = os.path.join(RES, "modsrc")
         self.cfgfile = os.path.join(root, "config.json")
         self.mods = os.path.join(self.game, "mods")
 
@@ -85,18 +84,6 @@ def open_folder(p):
         subprocess.Popen(["open", p])
     else:
         subprocess.Popen(["xdg-open", p])
-
-
-def tree_hash(folder):
-    h = hashlib.sha1()
-    for dp, dn, fn in os.walk(folder):
-        dn[:] = sorted(d for d in dn if d not in ("build", ".gradle", ".git"))
-        for n in sorted(fn):
-            p = os.path.join(dp, n)
-            h.update(os.path.relpath(p, folder).encode())
-            with open(p, "rb") as f:
-                h.update(f.read())
-    return h.hexdigest()
 
 
 class Ctx:

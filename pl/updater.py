@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Автообновление SweetieFox.exe через GitHub Releases."""
+"""Автообновление DCODE.exe через GitHub Releases."""
 import os, sys, re, subprocess
 from .common import *
 
@@ -30,7 +30,7 @@ def check():
         if _ver(tag) <= _ver(VERSION):
             return None
         for a in r.get("assets", []):
-            if a["name"].lower() == "sweetiefox.exe":
+            if a["name"].lower() == "dcode.exe":
                 return tag, a["browser_download_url"]
     except Exception:
         pass
