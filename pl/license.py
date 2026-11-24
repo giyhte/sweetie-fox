@@ -103,8 +103,10 @@ class Lic:
     def extend(self, user, pw, key):
         self._apply(self.api("/api/extend", {"username": user, "password": pw, "key": key, "hwid": hwid()}))
 
-    def check(self):
-        self._apply(self.api("/api/check", {"token": self.d.get("token", ""), "hwid": hwid()}))
+    def check(self, playing=False, nick=""):
+        r = self.api("/api/check", {"token": self.d.get("token", ""), "hwid": hwid(), "playing": bool(playing), "nick": nick})
+        self._apply(r)
+        return r
 
     # --- состояние ---
     def left(self):

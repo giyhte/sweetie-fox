@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """Главный экран DCODE: только «Потяните, чтобы запустить» и отмена."""
-import re, threading, webbrowser
+import os, re, threading, webbrowser
 from PIL import Image
 from .common import *
 from . import engine
@@ -64,14 +64,30 @@ class Launcher:
 
         def work():
             try:
-                self.lic.check()
+                r = self.lic.check(self.running, self.cfg.get("nick") or self.lic.username)
+                if r.get("msgs") or r.get("kick") is not None:
+                    self.h.post(lambda: self.on_admin(r.get("msgs") or [], r.get("kick")))
             except lic_mod.LicenseError as e:
                 m = "Вы получили блокировку" if e.code == "banned" else (str(e) or "Сессия завершена")
                 self.h.post(lambda: self.gate(m))
             except Exception:
                 pass   # нет связи — играем дальше
         threading.Thread(target=work, daemon=True).start()
-        self.h.after(15000, self._recheck)
+        self.h.after(8000, self._recheck)
+
+    def on_admin(self, msgs, kick):
+        if not self.alive:
+            return
+        if msgs:
+            self.say("✉ " + msgs[-1])
+            try:
+                with open(os.path.join(self.P.game, "dcode_inbox.txt"), "a", encoding="utf-8") as f:
+                    f.write("\n".join(m.replace("\n", " ") for m in msgs) + "\n")
+            except Exception:
+                pass
+        if kick is not None and self.running:
+            self.kill()
+            self.reset("Тебя выкинули из игры: " + kick)
 
     def gate(self, note):
         if not self.alive:
