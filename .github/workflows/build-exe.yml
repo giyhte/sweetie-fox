@@ -17,7 +17,7 @@ jobs:
         with: { distribution: temurin, java-version: '21' }
       - name: Сборка клиента DCODE (jar)
         shell: pwsh
-        working-directory: client-src
+        working-directory: dcode-mod
         run: |
           .\gradlew.bat build --no-daemon
           if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -36,7 +36,7 @@ jobs:
         run: |
           foreach ($f in 'pl/__init__.py','pl/boot.py','pl/launcher_app.py','pl/license.py','pl/license_ui.py','assets/icon.ico','DCODE.pyw') { if (-not (Test-Path $f)) { Write-Error "Нет файла в репозитории: $f"; exit 1 } }
       - run: pip install pillow minecraft-launcher-lib pyinstaller
-      - run: pyinstaller --onefile --windowed --name DCODE --icon assets/icon.ico --add-data "assets;assets" --add-data "client;client" --paths . --collect-submodules pl --hidden-import pl.boot --hidden-import pl.launcher_app --hidden-import pl.installer --hidden-import pl.updater --hidden-import pl.engine --hidden-import pl.ui --hidden-import pl.common --hidden-import pl.license --hidden-import pl.license_ui DCODE.pyw
+      - run: pyinstaller --onefile --windowed --name DCODE --icon assets/icon.ico --add-data "assets;assets" --add-data "client;client" --paths . --collect-submodules pl --hidden-import pl.boot --hidden-import pl.launcher_app --hidden-import pl.installer --hidden-import pl.updater --hidden-import pl.engine --hidden-import pl.news --hidden-import pl.profile --hidden-import pl.ui --hidden-import pl.common --hidden-import pl.license --hidden-import pl.license_ui DCODE.pyw
       - uses: actions/upload-artifact@v4
         with: { name: DCODE-exe, path: dist/DCODE.exe }
       - name: Прикрепить exe к релизу

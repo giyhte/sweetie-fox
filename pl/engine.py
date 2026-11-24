@@ -45,6 +45,10 @@ def game_status(P, cfg):
         return "missing", "Игра не скачана"
     if not game_ok(P):
         return "update", "Нужно обновление"
+    _dest = os.path.join(P.mods, OWN_JAR)
+    if not (cfg.get("client_url") or CLIENT_URL) and not os.path.exists(os.path.join(RES, "client", OWN_JAR)) \
+            and not os.path.exists(_dest):
+        return "noclient", "Нет клиента DCODE (меню)"
     try:
         done = open(os.path.join(P.mods, ".pl_done"), encoding="utf-8").read().strip()
     except Exception:
@@ -168,6 +172,9 @@ def download_mods(P, ctx):
     ctx.frac(1)
 
 
+NOCLIENT = "Клиент DCODE не найден: в лаунчер не вшит client/dcode-client.jar (собери через GitHub Actions) и не задан client_url"
+
+
 def install_client(P, cfg, ctx):
     """Кладёт jar клиента DCODE в mods: из client/dcode-client.jar или по ссылке client_url."""
     from .common import CLIENT_URL
@@ -183,10 +190,12 @@ def install_client(P, cfg, ctx):
             shutil.copyfile(local, dest)
         else:
             ctx.log("! client/dcode-client.jar не найден и client_url не задан")
-            return
+            return os.path.exists(dest)
         ctx.log("  + DCODE client")
+        return True
     except Exception as e:
         ctx.log(f"  ! DCODE client: {e}")
+        return os.path.exists(dest)
 
 
 def json_s(o):
@@ -197,7 +206,8 @@ def json_s(o):
 def install_all(P, cfg, ctx, force=False):
     ctx.step(0.0, 0.75); install_game(P, ctx, force)
     ctx.step(0.75, 0.97); download_mods(P, ctx)
-    install_client(P, cfg, ctx)
+    if not install_client(P, cfg, ctx):
+        raise RuntimeError(NOCLIENT)
     write_options(P, cfg.get("low_mode", True))
     try:  # отметка «установка/обновление завершены» — чтобы статус не зависал на «нужно обновление»
         with open(os.path.join(P.mods, ".pl_done"), "w", encoding="utf-8") as _f:
@@ -235,7 +245,8 @@ def launch(P, cfg, lic=None):
         pass
     class _Q:  # тихий ctx для проверки клиента перед запуском
         def log(self, *a): pass
-    install_client(P, cfg, _Q())
+    if not install_client(P, cfg, _Q()):
+        raise RuntimeError(NOCLIENT)
     try:  # профиль для меню клиента: ник, аккаунт, срок лицензии
         import json as _j
         left = lic.left() if lic else -1

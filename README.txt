@@ -45,7 +45,7 @@ SWEETIE FOX — лаунчер Minecraft 1.21.11 (Fabric)
 
 === DCODE клиент + автосборка ===
 1. Загрузи ВСЮ эту папку в GitHub-репозиторий (push).
-2. Вкладка Actions -> build-exe соберёт: jar клиента (client-src) -> положит в лаунчер -> DCODE.exe.
+2. Вкладка Actions -> build-exe соберёт: jar клиента (dcode-mod) -> положит в лаунчер -> DCODE.exe.
 3. Скачай DCODE.exe из Artifacts (или из Release, если создашь релиз).
 4. Запусти DCODE.exe: он сам поставит Minecraft 1.21.4 + Fabric + моды + клиент DCODE.
 Меню клиента в игре: правый Shift.

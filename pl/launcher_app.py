@@ -87,9 +87,9 @@ class Launcher:
         self.lic.logout()
         show_gate(self.h, self.P, self.lic, "Ты вышел из аккаунта")
 
-    COL = {"ready": "#86efac", "update": "#fbbf24", "missing": "#fb7185"}
+    COL = {"ready": "#86efac", "update": "#fbbf24", "missing": "#fb7185", "noclient": "#fb7185"}
     LBL = {"ready": "Потяните, чтобы запустить", "update": "Потяните, чтобы обновить",
-           "missing": "Потяните, чтобы скачать"}
+           "missing": "Потяните, чтобы скачать", "noclient": "Клиент DCODE не найден"}
 
     def refresh_status(self):
         def work():
@@ -216,6 +216,8 @@ class Launcher:
             return
         if not self.lic.valid():
             return self.gate("Нужна действующая лицензия")
+        if engine.game_status(self.P, self.cfg)[0] == "noclient":
+            return self.say("В лаунчер не вшит клиент (client/dcode-client.jar). Собери exe через GitHub Actions")
         self.busy, self.cancel = True, False
         st = engine.game_status(self.P, self.cfg)[0]
         need = st != "ready"
