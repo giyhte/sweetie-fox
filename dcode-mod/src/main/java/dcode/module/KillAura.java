@@ -26,7 +26,7 @@ public class KillAura extends Module {
     private final NumSetting rotSpeed = add(new NumSetting("Скорость наведения", 60, 10, 180, 5));
     private final NumSetting cooldown = add(new NumSetting("Кулдаун атаки", 0.95, 0.5, 1.0, 0.05));
 
-    public KillAura() { super("KillAura"); }
+    public KillAura() { super("KillAura", Category.COMBAT, "Автоатака ближайших целей"); }
 
     @Override
     public void onTick() {

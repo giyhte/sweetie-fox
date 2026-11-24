@@ -20,7 +20,7 @@ public class Esp extends Module {
     private final NumSetting dist = add(new NumSetting("Дистанция", 64, 8, 128, 8));
     private final Set<Entity> marked = new HashSet<>();
 
-    public Esp() { super("ESP"); }
+    public Esp() { super("ESP", Category.RENDER, "Контур игроков сквозь стены"); }
 
     @Override
     public void onTick() {

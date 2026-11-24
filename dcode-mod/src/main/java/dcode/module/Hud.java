@@ -20,7 +20,7 @@ public class Hud extends Module {
     private static Hud instance;
 
     public Hud() {
-        super("HUD");
+        super("HUD", Category.RENDER, "Ватермарк, список модулей, координаты");
         instance = this;
         setEnabled(true);
         HudRenderCallback.EVENT.register(this::render);

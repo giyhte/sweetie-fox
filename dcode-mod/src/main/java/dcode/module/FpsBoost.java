@@ -11,7 +11,7 @@ public class FpsBoost extends Module {
     private CloudRenderMode clouds;
     private boolean ao, shadows;
 
-    public FpsBoost() { super("FPS Boost"); }
+    public FpsBoost() { super("FPS Boost", Category.MISC, "Снижает графику ради FPS"); }
 
     @Override
     protected void onEnable() {

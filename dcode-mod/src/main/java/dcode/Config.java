@@ -23,6 +23,7 @@ public class Config {
             for (Module m : ModuleManager.all()) {
                 JsonObject o = new JsonObject();
                 o.addProperty("enabled", m.isEnabled());
+                o.addProperty("key", m.getKey());
                 JsonObject s = new JsonObject();
                 for (Setting st : m.getSettings()) st.write(s);
                 o.add("settings", s);
@@ -40,6 +41,7 @@ public class Config {
                 if (!root.has(m.getName())) continue;
                 JsonObject o = root.getAsJsonObject(m.getName());
                 if (o.has("settings")) for (Setting st : m.getSettings()) st.read(o.getAsJsonObject("settings"));
+                if (o.has("key")) m.setKey(o.get("key").getAsInt());
                 if (o.has("enabled")) m.setEnabled(o.get("enabled").getAsBoolean());
             }
         } catch (Exception ignored) {}

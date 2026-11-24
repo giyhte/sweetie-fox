@@ -4,7 +4,7 @@ import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 
 public class FullBright extends Module {
-    public FullBright() { super("FullBright"); }
+    public FullBright() { super("FullBright", Category.RENDER, "Ночное зрение"); }
 
     @Override
     public void onTick() {

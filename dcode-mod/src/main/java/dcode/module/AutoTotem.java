@@ -10,7 +10,7 @@ public class AutoTotem extends Module {
     private final NumSetting delay = add(new NumSetting("Задержка (тики)", 1, 0, 10, 1));
     private int timer;
 
-    public AutoTotem() { super("AutoTotem"); }
+    public AutoTotem() { super("AutoTotem", Category.COMBAT, "Берёт тотем во вторую руку"); }
 
     @Override
     public void onTick() {

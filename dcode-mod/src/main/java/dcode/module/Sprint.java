@@ -1,7 +1,7 @@
 package dcode.module;
 
 public class Sprint extends Module {
-    public Sprint() { super("Sprint"); }
+    public Sprint() { super("Sprint", Category.MOVEMENT, "Автоматический спринт"); }
 
     @Override
     public void onTick() {
