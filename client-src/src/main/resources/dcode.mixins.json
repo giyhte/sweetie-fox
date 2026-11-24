@@ -1,0 +1,7 @@
+{
+  "required": true,
+  "package": "dcode.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": ["MinecraftClientAccessor", "EntityAccessor"],
+  "injectors": { "defaultRequire": 1 }
+}

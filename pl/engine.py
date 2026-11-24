@@ -29,6 +29,41 @@ def game_ok(P):
     return ok
 
 
+def _sha(path):
+    import hashlib
+    h = hashlib.sha1()
+    with open(path, "rb") as f:
+        for ch in iter(lambda: f.read(1 << 20), b""):
+            h.update(ch)
+    return h.hexdigest()
+
+
+def game_status(P, cfg):
+    """('ready' | 'update' | 'missing', подпись) — состояние игры для главного экрана."""
+    import json as _j
+    if not find_version(P):
+        return "missing", "Игра не скачана"
+    if not game_ok(P):
+        return "update", "Нужно обновление"
+    try:
+        reg = _j.load(open(os.path.join(P.mods, ".pl_mods.json"), encoding="utf-8"))
+    except Exception:
+        reg = {}
+    if any(not (m in reg and os.path.exists(os.path.join(P.mods, reg[m]))) for m in MODS):
+        return "update", "Нужно обновление"
+    dest = os.path.join(P.mods, OWN_JAR)
+    if not os.path.exists(dest):
+        return "update", "Нужно обновление"
+    local = os.path.join(RES, "client", OWN_JAR)
+    if not (cfg.get("client_url") or CLIENT_URL) and os.path.exists(local):
+        try:
+            if _sha(local) != _sha(dest):
+                return "update", "Нужно обновление"
+        except Exception:
+            pass
+    return "ready", "Готов к запуску"
+
+
 def state(P):
     n = 0
     if os.path.isdir(P.mods):
@@ -195,6 +230,14 @@ def launch(P, cfg, lic=None):
     class _Q:  # тихий ctx для проверки клиента перед запуском
         def log(self, *a): pass
     install_client(P, cfg, _Q())
+    try:  # профиль для меню клиента: ник, аккаунт, срок лицензии
+        import json as _j
+        left = lic.left() if lic else -1
+        exp = 0 if left is None else (int(time.time() + left) if left > 0 else -1)
+        with open(os.path.join(P.game, "dcode_profile.json"), "w", encoding="utf-8") as _f:
+            _j.dump({"nick": nick, "account": (lic.username if lic else ""), "expires_at": exp}, _f)
+    except Exception:
+        pass
     cmd = mll.command.get_minecraft_command(vid, P.game, opts)
     env = dict(os.environ)
     proc = subprocess.Popen(cmd, cwd=P.game, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,

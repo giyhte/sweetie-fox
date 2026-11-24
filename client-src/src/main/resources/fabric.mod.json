@@ -1,35 +1,19 @@
 {
-  "accessWidener": "delta.accesswidener",
   "schemaVersion": 1,
-  "id": "delta",
-  "version": "3.0.14",
+  "id": "dcode",
+  "version": "${version}",
   "name": "DCODE",
   "description": "DCODE client",
-  "authors": [
-    "DCODE"
-  ],
-  "contact": {
-    "homepage": "https://fabricmc.net/",
-    "sources": "https://github.com/FabricMC/fabric-example-mod"
-  },
-  "license": "Minecraft EULA",
-  "icon": "assets/delta/icon.png",
+  "authors": ["DCODE"],
+  "license": "All-Rights-Reserved",
+  "icon": "assets/dcode/icon.png",
   "environment": "client",
-  "entrypoints": {
-    "client": [
-      "platform.Initializer"
-    ]
-  },
-  "mixins": [
-    "delta.mixins.json"
-  ],
+  "entrypoints": { "client": ["dcode.DcodeMod"] },
+  "mixins": ["dcode.mixins.json"],
   "depends": {
-    "fabricloader": "\u003e\u003d0.16.5",
+    "fabricloader": ">=0.16.0",
     "minecraft": "~1.21.4",
-    "java": "\u003e\u003d21",
+    "java": ">=21",
     "fabric-api": "*"
-  },
-  "suggests": {
-    "another-mod": "*"
   }
 }
