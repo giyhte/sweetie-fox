@@ -46,16 +46,17 @@ def game_status(P, cfg):
     if not game_ok(P):
         return "update", "Нужно обновление"
     try:
-        reg = _j.load(open(os.path.join(P.mods, ".pl_mods.json"), encoding="utf-8"))
+        done = open(os.path.join(P.mods, ".pl_done"), encoding="utf-8").read().strip()
     except Exception:
-        reg = {}
-    if any(not (m in reg and os.path.exists(os.path.join(P.mods, reg[m]))) for m in MODS):
+        done = ""
+    if done != MC_VERSION:
         return "update", "Нужно обновление"
     dest = os.path.join(P.mods, OWN_JAR)
-    if not os.path.exists(dest):
-        return "update", "Нужно обновление"
     local = os.path.join(RES, "client", OWN_JAR)
-    if not (cfg.get("client_url") or CLIENT_URL) and os.path.exists(local):
+    has_url = bool(cfg.get("client_url") or CLIENT_URL)
+    if (has_url or os.path.exists(local)) and not os.path.exists(dest):
+        return "update", "Нужно обновление"
+    if not has_url and os.path.exists(local) and os.path.exists(dest):
         try:
             if _sha(local) != _sha(dest):
                 return "update", "Нужно обновление"
@@ -198,6 +199,11 @@ def install_all(P, cfg, ctx, force=False):
     ctx.step(0.75, 0.97); download_mods(P, ctx)
     install_client(P, cfg, ctx)
     write_options(P, cfg.get("low_mode", True))
+    try:  # отметка «установка/обновление завершены» — чтобы статус не зависал на «нужно обновление»
+        with open(os.path.join(P.mods, ".pl_done"), "w", encoding="utf-8") as _f:
+            _f.write(MC_VERSION)
+    except Exception:
+        pass
     ctx.step(1.0, 1.0)
     ctx.log("Готово!")
 

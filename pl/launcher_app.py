@@ -243,6 +243,8 @@ class Launcher:
             try:
                 if need:
                     engine.install_all(self.P, self.cfg, ctx)
+                    chk()
+                    return post(lambda: self.alive and self.reset("Готово! Потяните ещё раз, чтобы запустить игру"))
                 chk()
                 post(lambda: self.alive and (self.pull.set_label("Запуск…"), self.pull.set_progress(None), self.say("Запускаю игру…")))
                 if not self.cfg.get("nick") or self.cfg["nick"] == "Player":
