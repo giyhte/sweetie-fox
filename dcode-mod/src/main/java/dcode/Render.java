@@ -17,6 +17,8 @@ public final class Render {
     public static final Matrix4f PROJ = new Matrix4f();
     public static volatile Vec3d cam = Vec3d.ZERO;
     public static volatile boolean ready;
+    /** partial tick именно этого кадра мира — по нему же считается матрица камеры, иначе рамка ESP дрожит. */
+    public static volatile float frameDelta = -1f;
     public static volatile long lastTick = System.nanoTime();
 
     public static void init() {
@@ -26,6 +28,7 @@ public final class Render {
             VIEW.set(ms.peek().getPositionMatrix());
             PROJ.set(ctx.projectionMatrix());
             cam = ctx.camera().getPos();
+            try { frameDelta = ctx.tickCounter().getTickDelta(true); } catch (Throwable t) { frameDelta = -1f; }
             ready = true;
             try { KillAura.renderFx(VIEW, cam); } catch (Throwable ignored) {}
         });
@@ -33,6 +36,7 @@ public final class Render {
 
     /** Доля тика между двумя клиентскими тиками (0..1), считаем сами по времени. */
     public static float partial() {
+        if (frameDelta >= 0f) return Math.min(frameDelta, 1f);
         float p = (System.nanoTime() - lastTick) / 50_000_000f;
         return p < 0f ? 0f : Math.min(p, 1f);
     }
