@@ -16,10 +16,41 @@ def find_version(P):
     return c[0] if c else None
 
 
+def bad_jars(P):
+    """Битые/недокачанные jar (ZipException: END header not found)."""
+    out = []
+    for base in ("versions", "libraries"):
+        for dp, _, fs in os.walk(os.path.join(P.game, base)):
+            for f in fs:
+                if f.endswith(".jar"):
+                    pth = os.path.join(dp, f)
+                    try:
+                        zipfile.ZipFile(pth).close()
+                    except Exception:
+                        out.append(pth)
+    return out
+
+
+def repair(P):
+    """Удаляет битые файлы (и папку версии Fabric целиком), чтобы установщик скачал их заново."""
+    bad = bad_jars(P)
+    vd = os.path.join(P.game, "versions")
+    for pth in bad:
+        try:
+            parent = os.path.dirname(pth)
+            if os.path.dirname(parent) == vd and os.path.basename(parent).startswith("fabric-loader-"):
+                shutil.rmtree(parent, ignore_errors=True)
+            else:
+                os.remove(pth)
+        except Exception:
+            pass
+    return len(bad)
+
+
 def game_ok(P):
     """Игра целиком на месте — переустанавливать не нужно."""
     v = find_version(P)
-    if not v:
+    if not v or bad_jars(P):
         return False
     vd = os.path.join(P.game, "versions")
     ok = os.path.exists(os.path.join(vd, MC_VERSION, MC_VERSION + ".jar"))
@@ -106,6 +137,9 @@ def write_options(P, low):
 
 # ---------- игра ----------
 def install_game(P, ctx, force=False):
+    n = repair(P)
+    if n:
+        ctx.log(f"Нашёл повреждённых файлов: {n} — скачаю заново")
     if not force and game_ok(P):
         ctx.log("Игра уже установлена — пропускаю загрузку ✓")
         ctx.frac(1)
@@ -247,12 +281,17 @@ def launch(P, cfg, lic=None):
         def log(self, *a): pass
     if not install_client(P, cfg, _Q()):
         raise RuntimeError(NOCLIENT)
+    if bad_jars(P):
+        repair(P)
+        raise RuntimeError("Файлы игры были повреждены — удалил их. Потяните ещё раз: игра докачается")
     try:  # профиль для меню клиента: ник, аккаунт, срок лицензии
         import json as _j
         left = lic.left() if lic else -1
         exp = 0 if left is None else (int(time.time() + left) if left > 0 else -1)
         with open(os.path.join(P.game, "dcode_profile.json"), "w", encoding="utf-8") as _f:
-            _j.dump({"nick": nick, "account": (lic.username if lic else ""), "expires_at": exp}, _f)
+            from .license import hwid as _hw
+            _j.dump({"nick": nick, "account": (lic.username if lic else ""), "expires_at": exp,
+                     "token": (lic.d.get("token", "") if lic else ""), "url": (lic.url if lic else ""), "hwid": _hw()}, _f)
     except Exception:
         pass
     cmd = mll.command.get_minecraft_command(vid, P.game, opts)

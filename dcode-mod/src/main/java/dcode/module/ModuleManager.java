@@ -10,6 +10,7 @@ public class ModuleManager {
     public static List<Module> all() { return MODULES; }
 
     public static void tick() {
+        dcode.Render.lastTick = System.nanoTime();
         net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
         for (Module m : MODULES) {
             if (m.getKey() >= 0 && mc.getWindow() != null) {

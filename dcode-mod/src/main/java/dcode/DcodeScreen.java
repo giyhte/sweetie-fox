@@ -20,7 +20,7 @@ import java.util.Map;
 
 /** Компактное меню DCODE в стиле лаунчера: категории, карточки модулей, бинды, настройки, профиль. */
 public class DcodeScreen extends Screen {
-    private static final int BG = 0xF012091F, SIDE = 0xFF0D0719, CARD = 0xFF1A1136, CARD_H = 0xFF241949;
+    private static final int BG = 0x8C12091F, SIDE = 0x9A0D0719, CARD = 0xA61A1136, CARD_H = 0xB8241949;
     private static final int ACC = 0xFFA855F7, OFF = 0xFF3A2D5C, TXT = 0xFFFFFFFF, DIM = 0xFF8B7BB8;
     private static final int SIDE_W = 88, CARD_HEIGHT = 38, GAP = 6, ROW = 24;
 
@@ -246,7 +246,7 @@ public class DcodeScreen extends Screen {
 
         if (profile) {
             if (in(mx, my, cx + 158, cy + 78, 80, 18)) {
-                status = NickChanger.change(nickText) ? "Ник изменён — перезайди на сервер" : "Ник: 3–16 символов, A–Z, 0–9, _";
+                status = NickChanger.change(nickText) ? "Ник изменён — перезайди на сервер, чтобы он применился" : "Ник: 3–16 символов, A–Z, 0–9, _";
             } else focus = in(mx, my, cx, cy + 78, 150, 18) ? 2 : 0;
             return true;
         }

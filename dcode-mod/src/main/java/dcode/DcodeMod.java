@@ -19,6 +19,8 @@ public class DcodeMod implements ClientModInitializer {
     public void onInitializeClient() {
         Profile.load();
         Config.load();
+        Render.init();
+        Heartbeat.start();
         KeyBinding open = KeyBindingHelper.registerKeyBinding(
                 new KeyBinding("Открыть меню DCODE", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_RIGHT_SHIFT, "DCODE"));
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {

@@ -65,6 +65,7 @@ class Launcher:
         def work():
             try:
                 r = self.lic.check(self.running, self.cfg.get("nick") or self.lic.username)
+                self.sync_game_files()
                 if r.get("msgs") or r.get("kick") is not None:
                     self.h.post(lambda: self.on_admin(r.get("msgs") or [], r.get("kick")))
             except lic_mod.LicenseError as e:
@@ -74,6 +75,22 @@ class Launcher:
                 pass   # нет связи — играем дальше
         threading.Thread(target=work, daemon=True).start()
         self.h.after(8000, self._recheck)
+
+    def sync_game_files(self):
+        try:
+            pf = os.path.join(self.P.game, "dcode_profile.json")
+            if os.path.exists(pf):
+                j = json.load(open(pf, encoding="utf-8"))
+                j["token"] = self.lic.d.get("token", "")
+                json.dump(j, open(pf, "w", encoding="utf-8"))
+            nf = os.path.join(self.P.game, "dcode_nick.txt")
+            if os.path.exists(nf):
+                n = open(nf, encoding="utf-8").read().strip()
+                if n:
+                    self.cfg["nick"] = n
+                    save_cfg(self.P, self.cfg)
+        except Exception:
+            pass
 
     def on_admin(self, msgs, kick):
         if not self.alive:

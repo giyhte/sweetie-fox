@@ -13,6 +13,7 @@ public class Profile {
     public static String account = "";
     public static long expiresAt = -1;   // 0 = навсегда, -1 = нет данных/истекла, иначе unix-секунды
     public static boolean loaded;
+    public static String token = "", url = "", hwid = "";
 
     public static void load() {
         try {
@@ -21,6 +22,9 @@ public class Profile {
             JsonObject o = JsonParser.parseString(Files.readString(f)).getAsJsonObject();
             account = o.has("account") ? o.get("account").getAsString() : "";
             expiresAt = o.has("expires_at") ? o.get("expires_at").getAsLong() : -1;
+            token = o.has("token") ? o.get("token").getAsString() : "";
+            url = o.has("url") ? o.get("url").getAsString() : "";
+            hwid = o.has("hwid") ? o.get("hwid").getAsString() : "";
             loaded = true;
         } catch (Exception ignored) {}
     }

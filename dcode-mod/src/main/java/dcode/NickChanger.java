@@ -17,6 +17,9 @@ public class NickChanger {
         UUID uuid = UUID.nameUUIDFromBytes(("OfflinePlayer:" + nick).getBytes(StandardCharsets.UTF_8));
         Session s = new Session(nick, uuid, "", Optional.empty(), Optional.empty(), Session.AccountType.LEGACY);
         ((MinecraftClientAccessor) mc).dcode$setSession(s);
+        try {
+            java.nio.file.Files.writeString(net.fabricmc.loader.api.FabricLoader.getInstance().getGameDir().resolve("dcode_nick.txt"), nick);
+        } catch (Exception ignored) {}
         return true;
     }
 }
